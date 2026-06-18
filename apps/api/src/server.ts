@@ -1,0 +1,67 @@
+import Fastify, { type FastifyInstance } from 'fastify';
+import cookie from '@fastify/cookie';
+import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
+import multipart from '@fastify/multipart';
+import rateLimit from '@fastify/rate-limit';
+import type { AppContext } from './context.js';
+import authPlugin from './plugins/auth.js';
+import { authRoutes } from './routes/auth.js';
+import { folderRoutes } from './routes/folders.js';
+import { fileRoutes } from './routes/files.js';
+import { zkRoutes } from './routes/zk.js';
+import { quickRoutes } from './routes/quick.js';
+import { remoteRoutes } from './routes/remote.js';
+import { adminRoutes } from './routes/admin.js';
+
+export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
+  const app = Fastify({
+    logger: {
+      level: ctx.env.NODE_ENV === 'production' ? 'info' : 'debug',
+      transport:
+        ctx.env.NODE_ENV === 'development'
+          ? { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss', ignore: 'pid,hostname' } }
+          : undefined,
+    },
+    // We sit behind a reverse proxy in production; trust X-Forwarded-* for client IPs.
+    trustProxy: ctx.env.NODE_ENV === 'production',
+    bodyLimit: 1_048_576, // 1 MiB for JSON bodies; file uploads use multipart streaming.
+  });
+
+  app.decorate('ctx', ctx);
+
+  await app.register(helmet, { contentSecurityPolicy: false });
+  await app.register(cors, { origin: ctx.env.APP_URL, credentials: true });
+  await app.register(cookie, { secret: ctx.env.SESSION_SECRET });
+  await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
+  await app.register(multipart, {
+    limits: {
+      // The real ceiling is the user's quota, enforced while streaming in ingest.
+      // This guards against a single absurdly large part.
+      fileSize: 10 * 1024 ** 4, // 10 TiB
+      files: 1,
+    },
+  });
+
+  await app.register(authPlugin);
+
+  app.get('/health', async () => ({ status: 'ok' }));
+
+  await app.register(authRoutes, { prefix: '/auth' });
+  await app.register(folderRoutes, { prefix: '/folders' });
+  await app.register(fileRoutes, { prefix: '/files' });
+  await app.register(zkRoutes, { prefix: '/zk' });
+  await app.register(quickRoutes, { prefix: '/quick' });
+  await app.register(remoteRoutes, { prefix: '/remote' });
+  await app.register(adminRoutes, { prefix: '/admin' });
+
+  app.setErrorHandler((err: { statusCode?: number; message?: string }, req, reply) => {
+    req.log.error({ err }, 'request failed');
+    const status = err.statusCode && err.statusCode >= 400 ? err.statusCode : 500;
+    reply.code(status).send({
+      error: status === 500 ? 'Internal server error' : (err.message ?? 'Error'),
+    });
+  });
+
+  return app;
+}

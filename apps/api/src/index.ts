@@ -1,0 +1,37 @@
+import { mkdir } from 'node:fs/promises';
+import { loadEnv } from './env.js';
+import { createContext } from './context.js';
+import { buildServer } from './server.js';
+import { startRemoteWorker } from './worker/remote-worker.js';
+import { prisma } from './db.js';
+
+async function main(): Promise<void> {
+  const env = loadEnv();
+  const ctx = createContext(env);
+
+  // Ensure storage directories exist for the local driver.
+  if (env.STORAGE_DRIVER === 'local') {
+    await mkdir(env.STORAGE_PATH, { recursive: true });
+    await mkdir(env.QUARANTINE_PATH, { recursive: true });
+  }
+
+  const app = await buildServer(ctx);
+  const stopWorker = startRemoteWorker(ctx, app.log);
+
+  const shutdown = async (signal: string) => {
+    app.log.info({ signal }, 'shutting down');
+    stopWorker();
+    await app.close();
+    await prisma.$disconnect();
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+
+  await app.listen({ host: '0.0.0.0', port: env.API_PORT });
+}
+
+main().catch((err) => {
+  console.error('Fatal startup error:', err);
+  process.exit(1);
+});

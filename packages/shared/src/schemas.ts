@@ -1,0 +1,118 @@
+/**
+ * Zod schemas shared across the API (request validation) and the web client
+ * (form validation + typed responses). Keeping them here guarantees the two
+ * sides never drift.
+ */
+import { z } from 'zod';
+import { ENC_MODES, ROLES } from './constants.js';
+
+// ── Primitives ───────────────────────────────────────────────────────────────
+
+export const emailSchema = z.string().trim().toLowerCase().email().max(254);
+
+/**
+ * Password policy: long enough to matter, capped to avoid argon2 DoS via huge inputs.
+ */
+export const passwordSchema = z.string().min(12, 'Password must be at least 12 characters').max(256);
+
+export const cuidSchema = z.string().min(1).max(64);
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+
+export const loginSchema = z.object({
+  email: emailSchema,
+  password: z.string().min(1).max(256),
+});
+export type LoginInput = z.infer<typeof loginSchema>;
+
+// ── Folders ──────────────────────────────────────────────────────────────────
+
+export const folderNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(255)
+  // Forbid path separators and the special `.`/`..` names to keep storage safe.
+  .refine((name) => !/[/\\]/.test(name) && name !== '.' && name !== '..', {
+    message: 'Folder name contains invalid characters',
+  })
+  // Reject ASCII control characters without using a control-char regex literal.
+  .refine((name) => ![...name].some((ch) => ch.charCodeAt(0) < 0x20), {
+    message: 'Folder name contains control characters',
+  });
+
+export const createFolderSchema = z.object({
+  name: folderNameSchema,
+  parentId: cuidSchema.nullable().optional(),
+  isZeroKnowledge: z.boolean().optional().default(false),
+});
+export type CreateFolderInput = z.infer<typeof createFolderSchema>;
+
+// ── Remote-Upload ────────────────────────────────────────────────────────────
+
+export const remoteUploadSchema = z.object({
+  // Only http(s); deeper SSRF checks happen server-side at fetch time.
+  sourceUrl: z.string().url().max(2048).startsWith('http'),
+  folderId: cuidSchema.nullable().optional(),
+});
+export type RemoteUploadInput = z.infer<typeof remoteUploadSchema>;
+
+// ── Quick-Upload codes (admin) ───────────────────────────────────────────────
+
+export const createQuickCodeSchema = z.object({
+  targetFolderId: cuidSchema.nullable().optional(),
+  // null/undefined => no per-upload size limit beyond the user's quota.
+  maxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable().optional(),
+  expiresAt: z.coerce.date().nullable().optional(),
+  usageLimit: z.number().int().positive().max(100000).nullable().optional(),
+  password: z.string().min(4).max(256).nullable().optional(),
+});
+export type CreateQuickCodeInput = z.infer<typeof createQuickCodeSchema>;
+
+/** Body sent by an anonymous guest when redeeming a Quick-Upload code. */
+export const quickUploadRedeemSchema = z.object({
+  password: z.string().max(256).optional(),
+});
+
+// ── Admin: users & settings ──────────────────────────────────────────────────
+
+export const createUserSchema = z.object({
+  email: emailSchema,
+  password: passwordSchema,
+  role: z.enum(ROLES).default('USER'),
+  quotaBytes: z.number().int().nonnegative().nullable().optional(),
+});
+export type CreateUserInput = z.infer<typeof createUserSchema>;
+
+export const updateUserSchema = z.object({
+  role: z.enum(ROLES).optional(),
+  quotaBytes: z.number().int().nonnegative().nullable().optional(),
+  disabled: z.boolean().optional(),
+  password: passwordSchema.optional(),
+});
+export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+
+export const updateSettingsSchema = z.object({
+  // 0 = unlimited.
+  globalStorageCapBytes: z.number().int().nonnegative(),
+});
+export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
+
+// ── Zero-Knowledge vault ─────────────────────────────────────────────────────
+
+/**
+ * Metadata accompanying a client-encrypted (Zero-Knowledge) upload. The server
+ * stores these opaque values verbatim and can never derive the plaintext key.
+ */
+export const zkFileMetaSchema = z.object({
+  folderId: cuidSchema,
+  // Original filename, itself encrypted client-side and base64-encoded.
+  encryptedName: z.string().min(1).max(8192),
+  // base64 IV used for the file-content encryption.
+  iv: z.string().min(1).max(128),
+  // base64 wrapped data key (wrapped by the user's passphrase-derived key).
+  wrappedKey: z.string().min(1).max(8192),
+  // Plaintext size is intentionally NOT required; ciphertext size is measured server-side.
+  encMode: z.literal(ENC_MODES[1]), // 'ZK'
+});
+export type ZkFileMeta = z.infer<typeof zkFileMetaSchema>;

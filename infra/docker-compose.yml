@@ -1,0 +1,88 @@
+# OpenCoperLock — full self-hosted stack.
+#
+#   cp .env.example .env   # then edit secrets
+#   docker compose -f infra/docker-compose.yml up --build
+#
+# Services: web (Next.js), api (Fastify + worker), postgres, clamav (antivirus).
+# Build context is the repo root so the Dockerfiles can see the whole workspace.
+
+name: opencoperlock
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-opencoperlock}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-opencoperlock}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-opencoperlock}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  clamav:
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    # The freshclam DB download makes first boot slow; the API treats an unreachable
+    # scanner as "skipped", so the stack is usable before clamav is fully ready.
+    healthcheck:
+      test: ['CMD-SHELL', 'echo PING | nc -w 5 localhost 3310 | grep -q PONG']
+      interval: 30s
+      timeout: 10s
+      retries: 10
+    volumes:
+      - clamavdb:/var/lib/clamav
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      API_PORT: 4000
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-opencoperlock}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-opencoperlock}
+      MASTER_KEY: ${MASTER_KEY:?set MASTER_KEY in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+      STORAGE_PATH: /data/storage
+      QUARANTINE_PATH: /data/quarantine
+      DEFAULT_USER_QUOTA_BYTES: ${DEFAULT_USER_QUOTA_BYTES:-10737418240}
+      GLOBAL_STORAGE_CAP_BYTES: ${GLOBAL_STORAGE_CAP_BYTES:-0}
+      REMOTE_UPLOAD_MAX_BYTES: ${REMOTE_UPLOAD_MAX_BYTES:-2147483648}
+      CLAMAV_ENABLED: ${CLAMAV_ENABLED:-true}
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: 3310
+      VIRUSTOTAL_API_KEY: ${VIRUSTOTAL_API_KEY:-}
+    volumes:
+      - storage:/data
+    ports:
+      - '${API_PORT:-4000}:4000'
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      PORT: 3000
+    ports:
+      - '${WEB_PORT:-3000}:3000'
+
+volumes:
+  pgdata:
+  storage:
+  clamavdb:

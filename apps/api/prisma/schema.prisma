@@ -1,0 +1,185 @@
+// OpenCoperLock data model.
+// See docs/ARCHITECTURE.md for the rationale behind the encryption-related fields.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum EncMode {
+  SERVER // server-side envelope encryption at rest (scannable)
+  ZK // zero-knowledge: encrypted client-side, server is blind
+}
+
+enum AvStatus {
+  PENDING
+  CLEAN
+  INFECTED
+  SKIPPED // scanning disabled or scanner unreachable
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(USER)
+  // null = unlimited personal quota
+  quotaBytes   BigInt?
+  // denormalised running total of bytes the user stores, kept in sync on upload/delete
+  usedBytes    BigInt   @default(0)
+  disabled     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions        Session[]
+  folders         Folder[]
+  files           FileObject[]
+  quickCodes      QuickUploadCode[]
+  remoteJobs      RemoteUploadJob[]
+  auditLogs       AuditLog[]
+
+  @@index([email])
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // per-session secret used to derive the double-submit CSRF token
+  csrfSecret String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Folder {
+  id              String   @id @default(cuid())
+  ownerId         String
+  owner           User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  parentId        String?
+  parent          Folder?  @relation("FolderChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children        Folder[] @relation("FolderChildren")
+  name            String
+  isZeroKnowledge Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  files FileObject[]
+
+  @@unique([ownerId, parentId, name])
+  @@index([ownerId])
+}
+
+model FileObject {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  folderId  String?
+  folder    Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  name      String
+  sizeBytes BigInt
+  mimeType  String   @default("application/octet-stream")
+  // Opaque key into the storage driver (e.g. a path under STORAGE_PATH).
+  storageKey String  @unique
+  encMode   EncMode  @default(SERVER)
+
+  // ── SERVER mode crypto material ──
+  // base64 DEK wrapped by the deployment MASTER_KEY; null for ZK files.
+  wrappedKey String?
+  // base64 IV used to encrypt the file content; null for ZK files (the IV lives in the blob).
+  iv         String?
+  // base64 GCM auth tag for the file content; null for ZK files.
+  authTag    String?
+
+  // ── ZK mode crypto material (opaque to the server) ──
+  // client-encrypted original filename (base64); the `name` column holds a placeholder.
+  zkEncryptedName String?
+  // base64 wrapped data key (wrapped by the user's passphrase-derived key).
+  zkWrappedKey    String?
+  // base64 IV chosen by the client.
+  zkIv            String?
+
+  sha256   String?
+  avStatus AvStatus @default(PENDING)
+  createdAt DateTime @default(now())
+
+  @@index([ownerId])
+  @@index([folderId])
+}
+
+model QuickUploadCode {
+  id             String    @id @default(cuid())
+  code           String    @unique
+  createdById    String
+  createdBy      User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  // Files land here. null = the creator's root.
+  targetFolderId String?
+  // per-upload size cap in bytes; null = only bounded by quota
+  maxBytes       BigInt?
+  expiresAt      DateTime?
+  // null = unlimited redemptions
+  usageLimit     Int?
+  usageCount     Int       @default(0)
+  // optional argon2 hash guarding the drop zone
+  passwordHash   String?
+  createdAt      DateTime  @default(now())
+
+  @@index([code])
+  @@index([createdById])
+}
+
+model RemoteUploadJob {
+  id        String    @id @default(cuid())
+  ownerId   String
+  owner     User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  sourceUrl String
+  folderId  String?
+  status    JobStatus @default(QUEUED)
+  sizeBytes BigInt?
+  error     String?
+  fileId    String?
+  // simple lease so a single worker loop processes each job once
+  startedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([status])
+  @@index([ownerId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action    String
+  target    String?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+model Setting {
+  // single-row table (id = "global")
+  id                   String   @id @default("global")
+  globalStorageCapBytes BigInt  @default(0)
+  updatedAt            DateTime @updatedAt
+}

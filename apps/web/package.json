@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev -p ${WEB_PORT:-3000}",
     "build": "next build",
+    "postbuild": "node ../../scripts/assemble-standalone.mjs",
     "start": "next start -p ${WEB_PORT:-3000}",
+    "start:standalone": "node .next/standalone/apps/web/server.js",
     "typecheck": "tsc --noEmit",
     "lint": "ESLINT_USE_FLAT_CONFIG=false next lint --max-warnings 0"
   },

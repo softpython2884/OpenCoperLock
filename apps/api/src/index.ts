@@ -1,3 +1,5 @@
+// Side-effect import: must come first so .env is loaded before anything reads process.env.
+import './config/dotenv.js';
 import { mkdir } from 'node:fs/promises';
 import { loadEnv } from './env.js';
 import { createContext } from './context.js';

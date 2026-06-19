@@ -2,6 +2,7 @@
  * Idempotent seed: ensures the first admin account and the global Setting row exist.
  * Safe to run on every deploy — it never overwrites an existing admin's password.
  */
+import '../src/config/dotenv.js';
 import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 

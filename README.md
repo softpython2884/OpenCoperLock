@@ -82,6 +82,19 @@ openssl rand -base64 32
 See [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) for production setup behind a reverse
 proxy with TLS (e.g. `copper.forgenet.fr`).
 
+### Quick start (bare-metal / PM2)
+
+Prefer running it natively on a dedicated server? Provide your own PostgreSQL, then:
+
+```bash
+cp .env.example .env        # edit secrets + paths
+./scripts/deploy.sh         # build, migrate, seed
+pm2 start ecosystem.config.cjs
+pm2 save && pm2 startup      # restart on reboot
+```
+
+Full PM2 walkthrough in [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md#bare-metal-with-pm2-dedicated-server).
+
 ---
 
 ## 🧑‍💻 Local development

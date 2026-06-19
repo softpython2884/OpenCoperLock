@@ -421,6 +421,77 @@ runIf('API integration', () => {
     });
   });
 
+  describe('account (GDPR) and admin alerts', () => {
+    it('exports the user data as JSON', async () => {
+      await createUser({ email: 'exp@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 'exp@test.local', 'correct-horse-battery');
+      await uploadFile(app, '/files', auth, 'a.txt', Buffer.from('hi'));
+      const res = await app.inject({ method: 'GET', url: '/account/export', headers: { cookie: auth.cookie } });
+      expect(res.statusCode).toBe(200);
+      const data = JSON.parse(res.body);
+      expect(data.user.email).toBe('exp@test.local');
+      expect(data.files).toHaveLength(1);
+      expect(Array.isArray(data.activity)).toBe(true);
+    });
+
+    it('deletes the account after password confirmation, removing data', async () => {
+      const user = await createUser({ email: 'del@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 'del@test.local', 'correct-horse-battery');
+      await uploadFile(app, '/files', auth, 'a.txt', Buffer.from('bye'));
+
+      const wrong = await app.inject({
+        method: 'POST',
+        url: '/account/delete',
+        headers: authHeaders(auth),
+        payload: { password: 'nope' },
+      });
+      expect(wrong.statusCode).toBe(401);
+
+      const ok = await app.inject({
+        method: 'POST',
+        url: '/account/delete',
+        headers: authHeaders(auth),
+        payload: { password: 'correct-horse-battery' },
+      });
+      expect(ok.statusCode).toBe(200);
+      expect(await prisma.user.findUnique({ where: { id: user.id } })).toBeNull();
+      expect(await prisma.fileObject.count({ where: { ownerId: user.id } })).toBe(0);
+    });
+
+    it('refuses to delete the only administrator', async () => {
+      await createUser({ email: 'soleadmin@test.local', password: 'correct-horse-battery', role: 'ADMIN' });
+      const auth = await login(app, 'soleadmin@test.local', 'correct-horse-battery');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/account/delete',
+        headers: authHeaders(auth),
+        payload: { password: 'correct-horse-battery' },
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('reports infected-file alerts to admins', async () => {
+      const admin = await createUser({ email: 'al@test.local', password: 'correct-horse-battery', role: 'ADMIN' });
+      await prisma.fileObject.create({
+        data: {
+          ownerId: admin.id,
+          name: 'bad',
+          sizeBytes: 1n,
+          storageKey: 'ab/cd/infected1',
+          encMode: 'SERVER',
+          wrappedKey: 'k',
+          iv: 'i',
+          authTag: 't',
+          avStatus: 'INFECTED',
+        },
+      });
+      const auth = await login(app, 'al@test.local', 'correct-horse-battery');
+      const res = await app.inject({ method: 'GET', url: '/admin/alerts', headers: { cookie: auth.cookie } });
+      expect(res.json().infectedCount).toBeGreaterThanOrEqual(1);
+      expect(res.json().warnings.some((w: string) => w.includes('infected'))).toBe(true);
+    });
+  });
+
   describe('admin maintenance', () => {
     it('reconciles a drifted usedBytes counter', async () => {
       const admin = await createUser({

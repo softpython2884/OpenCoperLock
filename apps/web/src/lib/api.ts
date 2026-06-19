@@ -63,12 +63,44 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   return payload as T;
 }
 
+/**
+ * Upload with progress. `fetch` can't report upload progress, so this uses XMLHttpRequest
+ * and calls `onProgress(0..1)` as bytes are sent. Sends the session cookie + CSRF token.
+ */
+export function uploadWithProgress<T>(
+  path: string,
+  formData: FormData,
+  onProgress?: (fraction: number) => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_URL}${path}`);
+    xhr.withCredentials = true;
+    if (csrfToken) xhr.setRequestHeader(CSRF_HEADER, csrfToken);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      const isJson = xhr.getResponseHeader('content-type')?.includes('application/json');
+      const payload = isJson && xhr.responseText ? JSON.parse(xhr.responseText) : xhr.responseText;
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(payload as T);
+      } else {
+        reject(new ApiError(xhr.status, payload?.error ?? `Upload failed (${xhr.status})`, payload?.code));
+      }
+    };
+    xhr.onerror = () => reject(new ApiError(0, 'Network error during upload'));
+    xhr.send(formData);
+  });
+}
+
 export const api = {
   get: <T>(path: string, signal?: AbortSignal) => request<T>(path, { signal }),
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
   upload: <T>(path: string, formData: FormData) => request<T>(path, { method: 'POST', formData }),
+  uploadWithProgress,
   /** Build an absolute URL for a download link / blob fetch. */
   url: (path: string) => `${API_URL}${path}`,
 };

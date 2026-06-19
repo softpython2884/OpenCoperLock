@@ -16,6 +16,7 @@ import { remoteRoutes } from './routes/remote.js';
 import { shareRoutes } from './routes/shares.js';
 import { sharePublicRoutes } from './routes/share-public.js';
 import { twoFactorRoutes } from './routes/twofa.js';
+import { accountRoutes } from './routes/account.js';
 import { adminRoutes } from './routes/admin.js';
 
 export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
@@ -75,6 +76,7 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(shareRoutes, { prefix: '/shares' });
   await app.register(sharePublicRoutes, { prefix: '/s' });
   await app.register(twoFactorRoutes, { prefix: '/2fa' });
+  await app.register(accountRoutes, { prefix: '/account' });
   await app.register(adminRoutes, { prefix: '/admin' });
 
   app.setErrorHandler((err: { statusCode?: number; message?: string }, req, reply) => {

@@ -13,6 +13,7 @@ export default function DrivePage() {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<{ index: number; total: number; fraction: number } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const loadFolders = useCallback(async () => {
@@ -55,20 +56,25 @@ export default function DrivePage() {
 
   async function onUpload(list: FileList | null) {
     if (!list || list.length === 0) return;
+    const files = Array.from(list);
     setUploading(true);
     setError(null);
     try {
-      for (const file of Array.from(list)) {
+      for (let i = 0; i < files.length; i += 1) {
         const form = new FormData();
-        form.append('file', file);
+        form.append('file', files[i]);
         const q = currentId ? `?folderId=${currentId}` : '';
-        await api.upload(`/files${q}`, form);
+        setProgress({ index: i + 1, total: files.length, fraction: 0 });
+        await api.uploadWithProgress(`/files${q}`, form, (fraction) =>
+          setProgress({ index: i + 1, total: files.length, fraction }),
+        );
       }
       await Promise.all([loadFiles(currentId), refresh()]);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Upload failed');
     } finally {
       setUploading(false);
+      setProgress(null);
       if (fileInput.current) fileInput.current.value = '';
     }
   }
@@ -229,6 +235,23 @@ export default function DrivePage() {
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
+
+      {progress && (
+        <div className="space-y-1">
+          <div className="flex justify-between text-xs text-neutral-500">
+            <span>
+              Uploading {progress.index} of {progress.total}…
+            </span>
+            <span>{Math.round(progress.fraction * 100)}%</span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded bg-neutral-200 dark:bg-neutral-800">
+            <div
+              className="h-full bg-accent transition-[width] duration-150"
+              style={{ width: `${Math.round(progress.fraction * 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       <div
         className="card divide-y divide-neutral-100 p-0 dark:divide-neutral-800"

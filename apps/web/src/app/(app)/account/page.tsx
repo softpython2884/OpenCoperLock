@@ -5,7 +5,9 @@
  * and a list of active sessions (with IP / user-agent) that the user can revoke.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { api, ApiError } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { api, API_URL, ApiError } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 
 interface TwoFaStatus {
   enabled: boolean;
@@ -26,6 +28,8 @@ interface SessionInfo {
 }
 
 export default function AccountPage() {
+  const { refresh } = useAuth();
+  const router = useRouter();
   const [status, setStatus] = useState<TwoFaStatus | null>(null);
   const [setup, setSetup] = useState<SetupData | null>(null);
   const [token, setToken] = useState('');
@@ -99,6 +103,18 @@ export default function AccountPage() {
     await wrap(async () => {
       await api.del('/auth/sessions');
       await load();
+    });
+  }
+
+  async function deleteAccount() {
+    const password = window.prompt(
+      'This permanently deletes your account and all your files. Enter your password to confirm.',
+    );
+    if (!password) return;
+    await wrap(async () => {
+      await api.post('/account/delete', { password });
+      await refresh();
+      router.replace('/login');
     });
   }
 
@@ -199,6 +215,23 @@ export default function AccountPage() {
               )}
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Data & privacy (GDPR) */}
+      <section className="card space-y-3">
+        <h2 className="font-semibold">Your data</h2>
+        <p className="text-sm text-neutral-500">
+          Download a copy of your account data, or permanently delete your account and all of
+          your files. Deletion cannot be undone.
+        </p>
+        <div className="flex gap-2">
+          <a className="btn-ghost" href={`${API_URL}/account/export`}>
+            Export my data
+          </a>
+          <button className="btn-danger" onClick={deleteAccount}>
+            Delete my account
+          </button>
         </div>
       </section>
     </div>

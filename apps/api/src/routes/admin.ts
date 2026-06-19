@@ -113,6 +113,31 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true };
   });
 
+  // ── Operational alerts ───────────────────────────────────────────────────--
+  app.get('/alerts', async () => {
+    const [globalUsedBytes, globalCapBytes, infectedCount, users] = await Promise.all([
+      getGlobalUsedBytes(),
+      getGlobalCapBytes(),
+      prisma.fileObject.count({ where: { avStatus: 'INFECTED' } }),
+      prisma.user.findMany({ where: { quotaBytes: { not: null } }, select: { email: true, usedBytes: true, quotaBytes: true } }),
+    ]);
+
+    const warnings: string[] = [];
+    if (globalCapBytes > 0 && globalUsedBytes / globalCapBytes >= 0.9) {
+      warnings.push(`Global storage is at ${Math.round((globalUsedBytes / globalCapBytes) * 100)}% of the cap.`);
+    }
+    if (infectedCount > 0) {
+      warnings.push(`${infectedCount} file(s) were flagged as infected and quarantined from scanning.`);
+    }
+    const nearQuota = users
+      .filter((u) => u.quotaBytes && Number(u.usedBytes) / Number(u.quotaBytes) >= 0.9)
+      .map((u) => u.email);
+    if (nearQuota.length > 0) {
+      warnings.push(`${nearQuota.length} user(s) are near their quota: ${nearQuota.slice(0, 5).join(', ')}.`);
+    }
+    return { warnings, infectedCount };
+  });
+
   // ── Maintenance (manual trigger) ─────────────────────────────────────────--
   app.post('/maintenance', async (req) => {
     const summary = await runMaintenance(app.ctx, req.log);

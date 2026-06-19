@@ -33,19 +33,23 @@ export default function AdminPage() {
   // new-user form
   const [nu, setNu] = useState({ email: '', password: '', role: 'USER' });
 
+  const [alerts, setAlerts] = useState<string[]>([]);
+
   const loadAll = useCallback(async () => {
-    const [s, u, c, a, settings] = await Promise.all([
+    const [s, u, c, a, settings, al] = await Promise.all([
       api.get<Stats>('/admin/stats'),
       api.get<{ users: PublicUser[] }>('/admin/users'),
       api.get<{ codes: PublicQuickCode[] }>('/admin/quick-codes'),
       api.get<{ logs: AuditEntry[] }>('/admin/audit?limit=50'),
       api.get<{ globalStorageCapBytes: number }>('/admin/settings'),
+      api.get<{ warnings: string[] }>('/admin/alerts'),
     ]);
     setStats(s);
     setUsers(u.users);
     setCodes(c.codes);
     setAudit(a.logs);
     setCap(String(s.globalCapBytes));
+    setAlerts(al.warnings);
     void settings;
   }, []);
 
@@ -66,6 +70,17 @@ export default function AdminPage() {
   return (
     <div className="space-y-8">
       {error && <p className="text-sm text-red-600">{error}</p>}
+
+      {alerts.length > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950">
+          <p className="mb-1 text-sm font-medium text-amber-800 dark:text-amber-200">Alerts</p>
+          <ul className="list-inside list-disc text-sm text-amber-800 dark:text-amber-200">
+            {alerts.map((a, i) => (
+              <li key={i}>{a}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Stats */}
       {stats && (

@@ -100,4 +100,17 @@ Versioning (text-like files: txt, md, csv, json, log, yml, …):
       creates a separate file (no versioning), as before.
 - [ ] **Quota**: deleting a versioned file frees the space of the file *and* its versions.
 
+## Upload progress, admin alerts & GDPR self-service (lot 4)
+
+- [ ] **Upload progress**: upload a larger file in the Drive → a progress bar shows the
+      percentage (and "Uploading X of N" for multiple files).
+- [ ] **Admin alerts**: the Admin page shows an Alerts box when something needs attention —
+      e.g. an infected file exists, global storage is ≥90% of the cap, or a user is ≥90% of
+      their quota. (Set a small global cap to see the storage warning.)
+- [ ] **Export my data**: Account → "Export my data" downloads a JSON file with your
+      profile, folders, file metadata, shares, sessions and recent activity.
+- [ ] **Delete my account**: Account → "Delete my account" (password required) removes the
+      account and all files, then signs you out. The only administrator cannot delete
+      themselves.
+
 <!-- New features are appended below as they are built. -->

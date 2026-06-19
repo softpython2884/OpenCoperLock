@@ -32,7 +32,9 @@ software that overpromises is worse than software that is clear about its bounda
 | **SSRF** via Remote-Upload | scheme allowlist, per-hop redirect re-validation, private/reserved IP blocking, size cap |
 | Path traversal in storage | strict key validation, resolved-path containment check |
 | Quota exhaustion / storage DoS | per-user quota + global cap enforced while streaming |
-| Brute-force login / API abuse | rate limiting; (per-route login throttling is a planned hardening) |
+| Brute-force login | per-IP rate limit on `/auth/login` plus per-account exponential lockout |
+| Quick-Upload code guessing | per-IP rate limit plus a per-(code, IP) ban after repeated wrong passwords |
+| Counter/storage drift, unbounded logs | scheduled maintenance: usage reconciliation, orphan-blob GC, audit/job retention |
 | Malware distribution | ClamAV scan on ingest; VirusTotal hash lookup; quarantine on hit |
 | Tampered ciphertext at rest | AES-GCM authentication (detected on read) |
 

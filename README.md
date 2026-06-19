@@ -1,92 +1,54 @@
-<div align="center">
+# OpenCoperLock
 
-# 🔐 OpenCoperLock
+A self-hostable private cloud for a single dedicated machine. It combines an ordinary
+file Drive with three things most "drop a file" tools lack: a code-gated Quick-Upload for
+any device, a server-side Remote-Upload from a link, and a hybrid encryption model that
+lets you choose, per folder, between server-side encryption at rest (scannable) and a true
+client-side zero-knowledge vault.
 
-**A self-hostable private cloud — a clean Drive plus advanced acquisition & security tooling.**
+Licensed under the GNU AGPLv3. If you host a modified version, your users are entitled to
+the source.
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](./LICENSE)
-[![CI](https://github.com/softpython2884/opencoperlock/actions/workflows/ci.yml/badge.svg)](https://github.com/softpython2884/opencoperlock/actions/workflows/ci.yml)
-[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6.svg)](https://www.typescriptlang.org/)
+## What it does
 
-</div>
+- **Drive** — browse, upload (streaming), download and delete files and folders, with a
+  per-user storage quota and a deployment-wide cap.
+- **Quick-Upload** — open a temporary drop zone on any device by entering an active code,
+  no full login required. Optional password, expiry and usage limit per code.
+- **Remote-Upload** — paste a link and the server fetches the file directly, so a phone on
+  a metered connection never has to relay the bytes. SSRF-guarded.
+- **Antivirus** — files are scanned with ClamAV on upload; an optional VirusTotal hash
+  lookup is available on demand. Infected files are quarantined.
+- **Hybrid encryption** — AES-256-GCM at rest by default (so files can be scanned), plus an
+  opt-in zero-knowledge vault whose contents are encrypted in the browser and never
+  readable by the server.
+- **Administration** — create users, set per-user quotas, define the global cap, manage
+  Quick-Upload codes and read the audit log.
 
-OpenCoperLock is an ultra-light, secure private cloud you run on your own dedicated
-machine or VM. It pairs a classic file **Drive** with three things most "drop a file"
-tools lack: a **nomadic Quick-Upload by code**, a **server-side Remote-Upload from a
-link**, and a **hybrid encryption** model that lets you choose between server-side
-encryption-at-rest (scannable) and a true client-side **Zero-Knowledge Vault**.
+## Architecture
 
-> Built to be read, audited, and forked. AGPLv3 — if you host a modified version, your
-> users get the source.
-
----
-
-## ✨ Features
-
-| | Feature | What it does |
-|---|---|---|
-| 📁 | **Drive** | Browse, upload (streaming), download and delete files & folders. Per-user quota and a global storage cap. Minimalist UI, no heavy animations. |
-| ⚡ | **Quick-Upload by code** | Open a temporary drop zone on any device (phone, third-party PC) by entering an active code — no full login. |
-| 🌐 | **Remote-Upload** | Paste a link; the **server** downloads the file directly so your mobile connection (4G/5G) is never saturated. SSRF-guarded. |
-| 🛡️ | **Antivirus + VirusTotal** | Files are scanned with ClamAV on upload; optionally checked against the VirusTotal API. Infected files are quarantined. |
-| 🔒 | **Hybrid encryption** | Server-side AES-256-GCM at rest by default (so files can be scanned), **plus** an opt-in **Zero-Knowledge Vault** where files are encrypted in your browser and the server stays blind. |
-| 👤 | **Admin panel** | Create users, set per-user storage quotas, define the global storage cap, manage Quick-Upload codes, and read the audit log. |
-
----
-
-## 🏗️ Architecture
-
-A TypeScript monorepo (pnpm workspaces):
+A TypeScript monorepo managed with pnpm workspaces:
 
 ```
-opencoperlock/
-├─ apps/
-│  ├─ web/          # Next.js (App Router) — minimalist UI
-│  └─ api/          # Fastify API + background worker
-├─ packages/
-│  └─ shared/       # zod schemas, shared types, crypto helpers
-├─ infra/           # docker-compose, Dockerfiles, clamav config
-└─ docs/            # ARCHITECTURE, SECURITY, THREAT_MODEL, DEPLOYMENT
+apps/web        Next.js (App Router) front end
+apps/api        Fastify API + the Remote-Upload worker
+packages/shared zod schemas, shared types, server crypto, the SSRF guard, quota math
+infra           Dockerfiles, docker-compose, ClamAV config
+docs            architecture, security, threat model, deployment
 ```
 
-- **API**: Fastify + Prisma + PostgreSQL. Background jobs run on a DB-backed worker loop
-  (no Redis required — Redis/BullMQ is an optional upgrade).
-- **Storage**: pluggable driver; ships with a local-filesystem driver, ready for S3-compatible later.
-- **Encryption**: see [`docs/SECURITY.md`](./docs/SECURITY.md) and [`docs/THREAT_MODEL.md`](./docs/THREAT_MODEL.md).
+The API uses Prisma and PostgreSQL. Background work runs on a database-backed worker loop
+inside the API process, which keeps a deployment to a single moving part; Redis/BullMQ is a
+documented upgrade for horizontal scale. Storage goes through a small driver interface; a
+local-filesystem driver ships, and an S3-compatible one can be added without touching the
+routes. See `docs/ARCHITECTURE.md` for the full design.
 
-Read the full design in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
+## Installation
 
----
+### Guided (dedicated Debian/Ubuntu server)
 
-## 🚀 Quick start (Docker)
-
-```bash
-git clone https://github.com/softpython2884/opencoperlock.git
-cd opencoperlock
-cp .env.example .env
-# Edit .env — set strong values for POSTGRES_PASSWORD, MASTER_KEY,
-# SESSION_SECRET, ADMIN_EMAIL and ADMIN_PASSWORD.
-
-docker compose -f infra/docker-compose.yml up --build
-```
-
-Then open `http://localhost:3000` and sign in with the admin credentials from your `.env`.
-
-Generate strong secrets:
-
-```bash
-# 32-byte base64 keys for MASTER_KEY and SESSION_SECRET
-openssl rand -base64 32
-```
-
-See [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) for production setup behind a reverse
-proxy with TLS (e.g. `copper.forgenet.fr`).
-
-### One-command install (dedicated server)
-
-On a fresh Debian/Ubuntu box, the interactive wizard installs prerequisites and sets up
-PostgreSQL, `.env` (with generated secrets), the build, PM2, an nginx reverse proxy and a
-Let's Encrypt certificate:
+The wizard installs prerequisites and configures PostgreSQL, the environment, the build,
+PM2, an nginx reverse proxy and a Let's Encrypt certificate:
 
 ```bash
 git clone https://github.com/softpython2884/opencoperlock.git
@@ -94,46 +56,49 @@ cd opencoperlock
 bash scripts/setup-wizard.sh
 ```
 
-### Quick start (bare-metal / PM2, manual)
+### Manual (PM2)
 
-Prefer to wire it up yourself? Provide your own PostgreSQL, then:
+Provide your own PostgreSQL, then:
 
 ```bash
-cp .env.example .env        # edit secrets + paths
-./scripts/deploy.sh         # build, migrate, seed
+cp .env.example .env        # set secrets and paths
+./scripts/deploy.sh         # install, build, migrate, seed
 pm2 start ecosystem.config.cjs
-pm2 save && pm2 startup      # restart on reboot
+pm2 save && pm2 startup
 ```
 
-Full PM2 walkthrough in [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md#bare-metal-with-pm2-dedicated-server).
+### Docker
 
----
+```bash
+cp .env.example .env
+docker compose -f infra/docker-compose.yml up --build -d
+```
 
-## 🧑‍💻 Local development
+Generate strong secrets with `openssl rand -base64 32`. Full production notes, including
+reverse-proxy topology and backups, are in `docs/DEPLOYMENT.md`.
+
+## Development
 
 ```bash
 pnpm install
-# Start Postgres (and optional ClamAV) however you prefer, then:
-pnpm --filter @opencoperlock/api prisma:migrate
-pnpm --filter @opencoperlock/api db:seed
+pnpm --filter @opencoperlock/shared build
+pnpm --filter @opencoperlock/api prisma:generate
 pnpm dev
 ```
 
-Useful root scripts: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm format`.
+The API needs a local PostgreSQL. ClamAV is optional in development; when it is
+unreachable, uploads are accepted and marked unscanned. Project gates: `pnpm typecheck`,
+`pnpm lint`, `pnpm test`.
 
----
+## Security
 
-## 🔐 Security
+The encryption model, trust boundaries and a candid threat model are documented in
+`docs/SECURITY.md` and `docs/THREAT_MODEL.md`. To report a vulnerability, see `SECURITY.md`.
 
-Encryption model, trust boundaries and a threat model are documented in
-[`docs/SECURITY.md`](./docs/SECURITY.md) and [`docs/THREAT_MODEL.md`](./docs/THREAT_MODEL.md).
-To report a vulnerability, see [`SECURITY.md`](./SECURITY.md).
+## Contributing
 
-## 🤝 Contributing
+See `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
 
-Contributions are welcome — see [`CONTRIBUTING.md`](./CONTRIBUTING.md) and our
-[`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md).
+## License
 
-## 📄 License
-
-[GNU AGPL v3.0 or later](./LICENSE). © OpenCoperLock contributors.
+GNU AGPL v3.0 or later. See `LICENSE`.

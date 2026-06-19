@@ -6,4 +6,5 @@
 export * from './constants.js';
 export * from './schemas.js';
 export * from './quota.js';
+export * from './throttle.js';
 export * from './types.js';

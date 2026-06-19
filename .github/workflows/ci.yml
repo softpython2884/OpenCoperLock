@@ -13,6 +13,22 @@ jobs:
   build-test:
     name: Lint · Typecheck · Test · Build
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ocl
+          POSTGRES_PASSWORD: ocl
+          POSTGRES_DB: ocl_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ocl"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ocl:ocl@localhost:5432/ocl_test
     steps:
       - uses: actions/checkout@v4
 
@@ -40,7 +56,7 @@ jobs:
       - name: Lint
         run: pnpm -r lint
 
-      - name: Test
+      - name: Test (unit + integration)
         run: pnpm -r test
 
       - name: Build (web + api)

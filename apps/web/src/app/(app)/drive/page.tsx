@@ -90,6 +90,46 @@ export default function DrivePage() {
     await Promise.all([loadFiles(currentId), refresh()]);
   }
 
+  async function renameFile(file: PublicFile) {
+    const name = window.prompt('New file name', file.name);
+    if (!name || name === file.name) return;
+    try {
+      await api.patch(`/files/${file.id}`, { name });
+      await loadFiles(currentId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Rename failed');
+    }
+  }
+
+  /** Move a file or folder into another folder chosen from a numbered list. */
+  async function move(kind: 'file' | 'folder', id: string) {
+    const targets = [{ id: null as string | null, name: 'Home (root)' }, ...folders.filter((f) => f.id !== id)];
+    const choice = window.prompt(
+      `Move to which folder?\n${targets.map((t, i) => `${i}: ${t.name}`).join('\n')}`,
+      '0',
+    );
+    if (choice === null) return;
+    const target = targets[Number(choice)];
+    if (!target) return;
+    try {
+      await api.patch(`/${kind}s/${id}`, { folderId: target.id, parentId: target.id });
+      await Promise.all([loadFolders(), loadFiles(currentId)]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Move failed');
+    }
+  }
+
+  async function renameFolder(folder: PublicFolder) {
+    const name = window.prompt('New folder name', folder.name);
+    if (!name || name === folder.name) return;
+    try {
+      await api.patch(`/folders/${folder.id}`, { name });
+      await loadFolders();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Rename failed');
+    }
+  }
+
   async function deleteFolder(id: string) {
     if (!window.confirm('Delete this folder and everything in it?')) return;
     await api.del(`/folders/${id}`);
@@ -155,9 +195,17 @@ export default function DrivePage() {
               <span>📁</span>
               <span className="font-medium">{f.name}</span>
             </button>
-            <button className="btn-danger px-2 py-1" onClick={() => deleteFolder(f.id)}>
-              Delete
-            </button>
+            <div className="flex gap-2">
+              <button className="btn-ghost px-2 py-1" onClick={() => renameFolder(f)}>
+                Rename
+              </button>
+              <button className="btn-ghost px-2 py-1" onClick={() => move('folder', f.id)}>
+                Move
+              </button>
+              <button className="btn-danger px-2 py-1" onClick={() => deleteFolder(f.id)}>
+                Delete
+              </button>
+            </div>
           </div>
         ))}
 
@@ -173,6 +221,12 @@ export default function DrivePage() {
               <a className="btn-ghost px-2 py-1" href={api.url(`/files/${file.id}/download`)}>
                 Download
               </a>
+              <button className="btn-ghost px-2 py-1" onClick={() => renameFile(file)}>
+                Rename
+              </button>
+              <button className="btn-ghost px-2 py-1" onClick={() => move('file', file.id)}>
+                Move
+              </button>
               <button className="btn-danger px-2 py-1" onClick={() => deleteFile(file.id)}>
                 Delete
               </button>

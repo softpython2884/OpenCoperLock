@@ -3,4 +3,5 @@ export * from './schemas.js';
 export * from './crypto.js';
 export * from './ssrf.js';
 export * from './quota.js';
+export * from './throttle.js';
 export * from './types.js';

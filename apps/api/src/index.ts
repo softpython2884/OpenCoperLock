@@ -5,6 +5,7 @@ import { loadEnv } from './env.js';
 import { createContext } from './context.js';
 import { buildServer } from './server.js';
 import { startRemoteWorker } from './worker/remote-worker.js';
+import { startMaintenance } from './services/maintenance.js';
 import { prisma } from './db.js';
 
 async function main(): Promise<void> {
@@ -19,10 +20,12 @@ async function main(): Promise<void> {
 
   const app = await buildServer(ctx);
   const stopWorker = startRemoteWorker(ctx, app.log);
+  const stopMaintenance = startMaintenance(ctx, app.log);
 
   const shutdown = async (signal: string) => {
     app.log.info({ signal }, 'shutting down');
     stopWorker();
+    stopMaintenance();
     await app.close();
     await prisma.$disconnect();
     process.exit(0);

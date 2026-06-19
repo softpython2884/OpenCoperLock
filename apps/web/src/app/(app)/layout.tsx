@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
+import { StatusBanner } from '@/components/StatusBanner';
 import { formatBytes } from '@opencoperlock/shared/client';
 
 const NAV = [
@@ -71,6 +72,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
+      <StatusBanner />
       <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
     </div>
   );

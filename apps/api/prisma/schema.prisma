@@ -157,11 +157,32 @@ model RemoteUploadJob {
   fileId    String?
   // simple lease so a single worker loop processes each job once
   startedAt DateTime?
+  // retry bookkeeping: how many times we've tried, and when the next try is allowed
+  attempts  Int       @default(0)
+  nextRunAt DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
   @@index([status])
   @@index([ownerId])
+  @@index([status, nextRunAt])
+}
+
+// Generic failure counter for brute-force protection. One row per (bucket, key):
+//   - bucket "login" keyed by email           -> account lockout with backoff
+//   - bucket "quick" keyed by "<code>:<ip>"   -> Quick-Upload password guessing ban
+// Rows are pruned by the maintenance loop once they expire.
+model Throttle {
+  id          String    @id @default(cuid())
+  bucket      String
+  key         String
+  failures    Int       @default(0)
+  firstFailAt DateTime  @default(now())
+  lockedUntil DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([bucket, key])
+  @@index([lockedUntil])
 }
 
 model AuditLog {

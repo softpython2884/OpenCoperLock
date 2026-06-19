@@ -11,6 +11,7 @@ import { parseOr400 } from '../lib/validate.js';
 import { hashPassword } from '../services/password.js';
 import { toPublicQuickCode, toPublicUser } from '../lib/serialize.js';
 import { getGlobalCapBytes, getGlobalUsedBytes } from '../services/quota.js';
+import { runMaintenance } from '../services/maintenance.js';
 import { audit } from '../services/audit.js';
 
 const GLOBAL_SETTING_ID = 'global';
@@ -110,6 +111,13 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     await prisma.user.delete({ where: { id } });
     await audit(req, 'admin.user.delete', { target: id });
     return { ok: true };
+  });
+
+  // ── Maintenance (manual trigger) ─────────────────────────────────────────--
+  app.post('/maintenance', async (req) => {
+    const summary = await runMaintenance(app.ctx, req.log);
+    await audit(req, 'admin.maintenance.run');
+    return summary;
   });
 
   // ── Global settings ─────────────────────────────────────────────────────--

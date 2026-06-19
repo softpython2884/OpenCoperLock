@@ -23,6 +23,18 @@ const envSchema = z.object({
   DEFAULT_USER_QUOTA_BYTES: z.coerce.number().int().nonnegative().default(10_737_418_240),
   REMOTE_UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(2_147_483_648),
 
+  // Maintenance / retention
+  AUDIT_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
+  JOB_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  ORPHAN_GRACE_HOURS: z.coerce.number().int().positive().default(24),
+  MAINTENANCE_INTERVAL_HOURS: z.coerce.number().int().positive().default(24),
+
+  // IP rate limiting. Disabled in tests so a shared client IP doesn't trip limits.
+  RATE_LIMIT_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+
   CLAMAV_ENABLED: z
     .enum(['true', 'false'])
     .default('false')

@@ -5,6 +5,7 @@ import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import type { AppContext } from './context.js';
+import { getHealth } from './services/health.js';
 import authPlugin from './plugins/auth.js';
 import { authRoutes } from './routes/auth.js';
 import { folderRoutes } from './routes/folders.js';
@@ -17,7 +18,12 @@ import { adminRoutes } from './routes/admin.js';
 export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
-      level: ctx.env.NODE_ENV === 'production' ? 'info' : 'debug',
+      level:
+        ctx.env.NODE_ENV === 'test'
+          ? 'silent'
+          : ctx.env.NODE_ENV === 'production'
+            ? 'info'
+            : 'debug',
       transport:
         ctx.env.NODE_ENV === 'development'
           ? { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss', ignore: 'pid,hostname' } }
@@ -33,7 +39,10 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(cors, { origin: ctx.env.APP_URL, credentials: true });
   await app.register(cookie, { secret: ctx.env.SESSION_SECRET });
-  await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
+  await app.register(rateLimit, {
+    max: ctx.env.RATE_LIMIT_ENABLED ? 300 : 1_000_000,
+    timeWindow: '1 minute',
+  });
   await app.register(multipart, {
     limits: {
       // The real ceiling is the user's quota, enforced while streaming in ingest.
@@ -45,7 +54,14 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
 
   await app.register(authPlugin);
 
+  // Liveness: the process is up. Readiness: dependencies (DB + storage) are usable.
   app.get('/health', async () => ({ status: 'ok' }));
+  app.get('/ready', async (_req, reply) => {
+    const report = await getHealth(ctx);
+    return reply.code(report.ready ? 200 : 503).send(report);
+  });
+  // Authenticated status for the UI banner (warnings about degraded components).
+  app.get('/status', { preHandler: app.requireAuth }, async () => getHealth(ctx));
 
   await app.register(authRoutes, { prefix: '/auth' });
   await app.register(folderRoutes, { prefix: '/folders' });

@@ -42,11 +42,26 @@ function filenameFrom(url: URL, contentDisposition: string | null): string {
   return last && last.length > 0 ? decodeURIComponent(last) : 'download';
 }
 
+/** Raised for HTTP statuses; carries the code so the worker can decide whether to retry. */
+export class RemoteHttpError extends Error {
+  constructor(public readonly status: number) {
+    super(`Remote server returned ${status}`);
+    this.name = 'RemoteHttpError';
+  }
+}
+
 /**
  * Open a validated, redirect-safe stream for `rawUrl`. Returns a Node Readable plus
  * the inferred filename and content type. Throws SsrfError on any policy violation.
+ *
+ * `timeoutMs` bounds the whole transfer: the AbortSignal it builds aborts not only a slow
+ * connect but also a stalled body read, so a hung remote can never wedge the worker.
  */
-export async function openRemoteSource(rawUrl: string): Promise<RemoteSource> {
+export async function openRemoteSource(
+  rawUrl: string,
+  opts: { timeoutMs?: number } = {},
+): Promise<RemoteSource> {
+  const signal = AbortSignal.timeout(opts.timeoutMs ?? 5 * 60 * 1000);
   let current = assertAllowedUrl(rawUrl);
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
@@ -54,6 +69,7 @@ export async function openRemoteSource(rawUrl: string): Promise<RemoteSource> {
     const res = await fetch(current, {
       redirect: 'manual',
       headers: { 'user-agent': 'OpenCoperLock-RemoteUpload/0.1' },
+      signal,
     });
 
     // Manual redirect handling so we re-validate each Location.
@@ -65,7 +81,7 @@ export async function openRemoteSource(rawUrl: string): Promise<RemoteSource> {
     }
 
     if (!res.ok || !res.body) {
-      throw new Error(`Remote server returned ${res.status}`);
+      throw new RemoteHttpError(res.status);
     }
 
     return {

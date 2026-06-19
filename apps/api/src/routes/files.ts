@@ -1,5 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
+import { updateFileSchema } from '@opencoperlock/shared';
 import { prisma } from '../db.js';
+import { parseOr400 } from '../lib/validate.js';
 import { newStorageKey } from '../storage/index.js';
 import {
   FileTooLargeError,
@@ -102,6 +104,39 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
         `attachment; filename="${encodeURIComponent(file.name)}"`,
       );
     return reply.send(decryptServerFile(app.ctx, file));
+  });
+
+  // PATCH /files/:id — rename and/or move a SERVER-mode file.
+  app.patch('/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = parseOr400(reply, updateFileSchema, req.body);
+    if (!body) return;
+
+    const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id } });
+    if (!file) return reply.code(404).send({ error: 'File not found' });
+    if (file.encMode === 'ZK') {
+      return reply.code(400).send({ error: 'Vault files are managed through the vault API' });
+    }
+
+    if (body.folderId !== undefined && body.folderId !== null) {
+      const folder = await prisma.folder.findFirst({
+        where: { id: body.folderId, ownerId: req.user!.id },
+      });
+      if (!folder) return reply.code(404).send({ error: 'Target folder not found' });
+      if (folder.isZeroKnowledge) {
+        return reply.code(400).send({ error: 'Cannot move a plaintext file into a vault' });
+      }
+    }
+
+    const updated = await prisma.fileObject.update({
+      where: { id },
+      data: {
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.folderId !== undefined ? { folderId: body.folderId } : {}),
+      },
+    });
+    await audit(req, 'file.update', { target: id });
+    return { file: toPublicFile(updated) };
   });
 
   // DELETE /files/:id — remove the blob and release quota.

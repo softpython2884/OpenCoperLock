@@ -9,6 +9,7 @@
  */
 import type { FastifyPluginAsync } from 'fastify';
 import type { Readable } from 'node:stream';
+import { QUICK_THROTTLE } from '@opencoperlock/shared';
 import { prisma } from '../db.js';
 import { newStorageKey } from '../storage/index.js';
 import { verifyPassword } from '../services/password.js';
@@ -18,6 +19,7 @@ import {
   ingestPlaintext,
 } from '../services/ingest.js';
 import { adjustUsage, remainingAllowance } from '../services/quota.js';
+import { checkLock, clearFailures, recordFailure } from '../services/throttle.js';
 import { audit } from '../services/audit.js';
 
 function isExpired(expiresAt: Date | null): boolean {
@@ -40,33 +42,48 @@ export const quickRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // POST /quick/:code — guest upload. Send an optional `password` field, then the file.
-  app.post('/:code', async (req, reply) => {
-    const { code } = req.params as { code: string };
-    const entry = await prisma.quickUploadCode.findUnique({ where: { code } });
-    if (!entry || isExpired(entry.expiresAt) || isUsedUp(entry.usageLimit, entry.usageCount)) {
-      return reply.code(404).send({ error: 'Code not found or no longer active' });
-    }
-
-    let password: string | undefined;
-    let filePart: { file: Readable; filename: string; mimetype: string } | undefined;
-    for await (const part of req.parts()) {
-      if (part.type === 'field' && part.fieldname === 'password') {
-        password = String(part.value);
-      } else if (part.type === 'file') {
-        filePart = { file: part.file, filename: part.filename, mimetype: part.mimetype };
-        break;
+  // Per-IP rate limit guards the endpoint; a per-(code,IP) ban guards the password itself.
+  const quickOpts = app.ctx.env.RATE_LIMIT_ENABLED
+    ? { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }
+    : {};
+  app.post('/:code', quickOpts, async (req, reply) => {
+      const { code } = req.params as { code: string };
+      const entry = await prisma.quickUploadCode.findUnique({ where: { code } });
+      if (!entry || isExpired(entry.expiresAt) || isUsedUp(entry.usageLimit, entry.usageCount)) {
+        return reply.code(404).send({ error: 'Code not found or no longer active' });
       }
-    }
 
-    if (entry.passwordHash) {
-      const ok = password ? await verifyPassword(entry.passwordHash, password) : false;
-      if (!ok) {
-        // Drain any file stream we already started consuming.
-        filePart?.file.resume();
-        return reply.code(401).send({ error: 'Incorrect code password' });
+      // Ban an IP that keeps guessing this code's password. Keyed per (code, IP) so one
+      // guest's mistakes never affect another, and a correct password isn't penalised.
+      const throttleKey = `${code}:${req.ip}`;
+      const lock = await checkLock('quick', throttleKey);
+      if (lock.locked) {
+        reply.header('Retry-After', String(lock.retryAfterSec));
+        return reply.code(429).send({ error: 'Too many attempts. Try again later.', code: 'LOCKED' });
       }
-    }
-    if (!filePart) return reply.code(400).send({ error: 'No file provided' });
+
+      let password: string | undefined;
+      let filePart: { file: Readable; filename: string; mimetype: string } | undefined;
+      for await (const part of req.parts()) {
+        if (part.type === 'field' && part.fieldname === 'password') {
+          password = String(part.value);
+        } else if (part.type === 'file') {
+          filePart = { file: part.file, filename: part.filename, mimetype: part.mimetype };
+          break;
+        }
+      }
+
+      if (entry.passwordHash) {
+        const ok = password ? await verifyPassword(entry.passwordHash, password) : false;
+        if (!ok) {
+          filePart?.file.resume(); // drain any file stream we already started consuming
+          const after = await recordFailure('quick', throttleKey, QUICK_THROTTLE);
+          if (after.locked) reply.header('Retry-After', String(after.retryAfterSec));
+          return reply.code(401).send({ error: 'Incorrect code password' });
+        }
+        await clearFailures('quick', throttleKey);
+      }
+      if (!filePart) return reply.code(400).send({ error: 'No file provided' });
 
     if (entry.targetFolderId) {
       const folder = await prisma.folder.findUnique({ where: { id: entry.targetFolderId } });

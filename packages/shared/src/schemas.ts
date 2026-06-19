@@ -48,6 +48,41 @@ export const createFolderSchema = z.object({
 });
 export type CreateFolderInput = z.infer<typeof createFolderSchema>;
 
+/** Rename and/or move a folder. At least one field should be present. */
+export const updateFolderSchema = z
+  .object({
+    name: folderNameSchema.optional(),
+    parentId: cuidSchema.nullable().optional(), // null = move to root
+  })
+  .refine((v) => v.name !== undefined || v.parentId !== undefined, {
+    message: 'Provide a new name and/or parent',
+  });
+export type UpdateFolderInput = z.infer<typeof updateFolderSchema>;
+
+/** A filename may contain spaces/dots but not path separators or control characters. */
+export const fileNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(255)
+  .refine((name) => !/[/\\]/.test(name) && name !== '.' && name !== '..', {
+    message: 'File name contains invalid characters',
+  })
+  .refine((name) => ![...name].some((ch) => ch.charCodeAt(0) < 0x20), {
+    message: 'File name contains control characters',
+  });
+
+/** Rename and/or move a file. */
+export const updateFileSchema = z
+  .object({
+    name: fileNameSchema.optional(),
+    folderId: cuidSchema.nullable().optional(), // null = move to root
+  })
+  .refine((v) => v.name !== undefined || v.folderId !== undefined, {
+    message: 'Provide a new name and/or folder',
+  });
+export type UpdateFileInput = z.infer<typeof updateFileSchema>;
+
 // ── Remote-Upload ────────────────────────────────────────────────────────────
 
 export const remoteUploadSchema = z.object({

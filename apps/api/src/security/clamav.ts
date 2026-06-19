@@ -87,6 +87,35 @@ export class ClamAvScanner {
     });
   }
 
+  get isEnabled(): boolean {
+    return this.opts.enabled;
+  }
+
+  /** Liveness check: send PING, expect PONG. Used by the readiness probe. */
+  ping(): Promise<boolean> {
+    if (!this.opts.enabled) return Promise.resolve(false);
+    return new Promise<boolean>((resolvePromise) => {
+      let settled = false;
+      const settle = (v: boolean) => {
+        if (!settled) {
+          settled = true;
+          resolvePromise(v);
+        }
+      };
+      const socket = connect(this.opts.port, this.opts.host);
+      socket.setTimeout(this.opts.timeoutMs ?? 5_000);
+      const chunks: Buffer[] = [];
+      socket.on('connect', () => socket.write('zPING\0'));
+      socket.on('data', (d: Buffer) => chunks.push(d));
+      socket.on('end', () => settle(Buffer.concat(chunks).toString('utf8').includes('PONG')));
+      socket.on('timeout', () => {
+        socket.destroy();
+        settle(false);
+      });
+      socket.on('error', () => settle(false));
+    });
+  }
+
   // For chunked streaming we split large chunks to respect clamd's StreamMaxLength
   // expectations; exposed for completeness / future tuning.
   static get chunkSize(): number {

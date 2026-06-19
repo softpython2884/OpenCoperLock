@@ -8,6 +8,7 @@ import type {
   Folder,
   QuickUploadCode,
   RemoteUploadJob,
+  ShareLink,
   User,
 } from '@prisma/client';
 import type {
@@ -15,6 +16,7 @@ import type {
   PublicFolder,
   PublicQuickCode,
   PublicRemoteJob,
+  PublicShare,
   PublicUser,
 } from '@opencoperlock/shared';
 
@@ -66,6 +68,23 @@ export function toPublicQuickCode(c: QuickUploadCode): PublicQuickCode {
     usageLimit: c.usageLimit,
     usageCount: c.usageCount,
     createdAt: c.createdAt.toISOString(),
+  };
+}
+
+export function toPublicShare(s: ShareLink, targetName: string): PublicShare {
+  return {
+    id: s.id,
+    token: s.token,
+    fileId: s.fileId,
+    folderId: s.folderId,
+    targetName,
+    viewType: s.viewType,
+    access: s.access,
+    allowDownload: s.allowDownload,
+    expiresAt: s.expiresAt ? s.expiresAt.toISOString() : null,
+    maxDownloads: s.maxDownloads,
+    downloadCount: s.downloadCount,
+    createdAt: s.createdAt.toISOString(),
   };
 }
 

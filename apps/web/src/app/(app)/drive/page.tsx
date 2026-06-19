@@ -119,6 +119,37 @@ export default function DrivePage() {
     }
   }
 
+  /** Minimal prompt-driven share creation; copies the resulting link to the clipboard. */
+  async function share(kind: 'file' | 'folder', id: string) {
+    const mode = window.prompt('Access: 1 = anyone, 2 = anyone with a code, 3 = account holders', '1');
+    if (mode === null) return;
+    const accessMode = mode === '2' ? 'CODE' : mode === '3' ? 'AUTHENTICATED' : 'PUBLIC';
+    const viewType = window.confirm('OK = preview page, Cancel = raw file link') ? 'PAGE' : 'RAW';
+    let code: string | undefined;
+    if (accessMode === 'CODE') {
+      code = window.prompt('Set an access code (min 4 chars)') ?? undefined;
+      if (!code || code.length < 4) return;
+    }
+    const days = window.prompt('Expire after how many days? (blank = never)', '');
+    const expiresAt =
+      days && Number(days) > 0 ? new Date(Date.now() + Number(days) * 86400_000).toISOString() : undefined;
+    try {
+      const body = kind === 'file' ? { fileId: id } : { folderId: id };
+      const res = await api.post<{ share: { token: string } }>('/shares', {
+        ...body,
+        accessMode,
+        viewType,
+        code,
+        expiresAt,
+      });
+      const url = `${window.location.origin}/s/${res.share.token}`;
+      await navigator.clipboard?.writeText(url).catch(() => {});
+      window.prompt('Share link (copied to clipboard):', url);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not create share');
+    }
+  }
+
   async function renameFolder(folder: PublicFolder) {
     const name = window.prompt('New folder name', folder.name);
     if (!name || name === folder.name) return;
@@ -196,6 +227,9 @@ export default function DrivePage() {
               <span className="font-medium">{f.name}</span>
             </button>
             <div className="flex gap-2">
+              <button className="btn-ghost px-2 py-1" onClick={() => share('folder', f.id)}>
+                Share
+              </button>
               <button className="btn-ghost px-2 py-1" onClick={() => renameFolder(f)}>
                 Rename
               </button>
@@ -221,6 +255,9 @@ export default function DrivePage() {
               <a className="btn-ghost px-2 py-1" href={api.url(`/files/${file.id}/download`)}>
                 Download
               </a>
+              <button className="btn-ghost px-2 py-1" onClick={() => share('file', file.id)}>
+                Share
+              </button>
               <button className="btn-ghost px-2 py-1" onClick={() => renameFile(file)}>
                 Rename
               </button>

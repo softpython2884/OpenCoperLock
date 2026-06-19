@@ -18,6 +18,19 @@ export type AvStatus = (typeof AV_STATUSES)[number];
 export const JOB_STATUSES = ['QUEUED', 'RUNNING', 'DONE', 'FAILED'] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
+/** How a share link presents its target. RAW = direct file; PAGE = a landing/preview page. */
+export const SHARE_VIEW_TYPES = ['RAW', 'PAGE'] as const;
+export type ShareViewType = (typeof SHARE_VIEW_TYPES)[number];
+
+/**
+ * Who may open a share, mirroring the Prisma `ShareAccess` enum:
+ *  - PUBLIC        anyone with the link
+ *  - CODE          anyone with the link who also enters the code/password
+ *  - AUTHENTICATED only signed-in users of this instance
+ */
+export const SHARE_ACCESS_MODES = ['PUBLIC', 'CODE', 'AUTHENTICATED'] as const;
+export type ShareAccess = (typeof SHARE_ACCESS_MODES)[number];
+
 /** Name of the session cookie. */
 export const SESSION_COOKIE = 'ocl_session';
 

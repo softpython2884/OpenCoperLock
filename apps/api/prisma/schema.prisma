@@ -34,6 +34,17 @@ enum JobStatus {
   FAILED
 }
 
+enum ShareViewType {
+  RAW
+  PAGE
+}
+
+enum ShareAccess {
+  PUBLIC
+  CODE
+  AUTHENTICATED
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -53,6 +64,7 @@ model User {
   quickCodes      QuickUploadCode[]
   remoteJobs      RemoteUploadJob[]
   auditLogs       AuditLog[]
+  shares          ShareLink[]
 
   @@index([email])
 }
@@ -81,7 +93,8 @@ model Folder {
   isZeroKnowledge Boolean  @default(false)
   createdAt       DateTime @default(now())
 
-  files FileObject[]
+  files  FileObject[]
+  shares ShareLink[]
 
   @@unique([ownerId, parentId, name])
   @@index([ownerId])
@@ -119,6 +132,8 @@ model FileObject {
   sha256   String?
   avStatus AvStatus @default(PENDING)
   createdAt DateTime @default(now())
+
+  shares ShareLink[]
 
   @@index([ownerId])
   @@index([folderId])
@@ -203,4 +218,29 @@ model Setting {
   id                   String   @id @default("global")
   globalStorageCapBytes BigInt  @default(0)
   updatedAt            DateTime @updatedAt
+}
+
+// A shareable link to a SERVER-mode file or folder. ZK targets can't be shared (the
+// server can't decrypt them). The opaque `token` is the URL slug.
+model ShareLink {
+  id        String        @id @default(cuid())
+  token     String        @unique
+  ownerId   String
+  owner     User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  fileId    String?
+  file      FileObject?   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  folderId  String?
+  folder    Folder?       @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  viewType  ShareViewType @default(PAGE)
+  access    ShareAccess   @default(PUBLIC)
+  // argon2 hash of the code, when access = CODE
+  codeHash      String?
+  allowDownload Boolean   @default(true)
+  expiresAt     DateTime?
+  maxDownloads  Int?
+  downloadCount Int       @default(0)
+  createdAt     DateTime  @default(now())
+
+  @@index([ownerId])
+  @@index([token])
 }

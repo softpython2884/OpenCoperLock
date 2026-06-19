@@ -185,6 +185,104 @@ runIf('API integration', () => {
     });
   });
 
+  describe('share links', () => {
+    async function setupFileShare(extra: Record<string, unknown>) {
+      await createUser({ email: 's@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 's@test.local', 'correct-horse-battery');
+      const up = await uploadFile(app, '/files', auth, 'shared.txt', Buffer.from('shared contents'));
+      const fileId = up.json().file.id;
+      const res = await app.inject({
+        method: 'POST',
+        url: '/shares',
+        headers: authHeaders(auth),
+        payload: { fileId, ...extra },
+      });
+      expect(res.statusCode).toBe(201);
+      return { auth, fileId, token: res.json().share.token as string };
+    }
+
+    it('serves a public share and counts downloads', async () => {
+      const { token, fileId } = await setupFileShare({ accessMode: 'PUBLIC', viewType: 'PAGE' });
+
+      // Metadata is public (no auth).
+      const meta = await app.inject({ method: 'GET', url: `/s/${token}` });
+      expect(meta.statusCode).toBe(200);
+      expect(meta.json().file.name).toBe('shared.txt');
+
+      // Download returns the bytes.
+      const dl = await app.inject({ method: 'GET', url: `/s/${token}/file/${fileId}` });
+      expect(dl.statusCode).toBe(200);
+      expect(Buffer.from(dl.rawPayload).toString()).toBe('shared contents');
+
+      // Inline preview does not count; an attachment download does.
+      await app.inject({ method: 'GET', url: `/s/${token}/file/${fileId}?inline=1` });
+      const share = await prisma.shareLink.findFirstOrThrow({ where: { token } });
+      expect(share.downloadCount).toBe(1);
+    });
+
+    it('enforces a code-protected share', async () => {
+      const { token, fileId } = await setupFileShare({ accessMode: 'CODE', code: 'sesame' });
+
+      const locked = await app.inject({ method: 'GET', url: `/s/${token}` });
+      expect(locked.json().requiresCode).toBe(true);
+      expect(locked.json().file).toBeUndefined();
+
+      const denied = await app.inject({ method: 'GET', url: `/s/${token}/file/${fileId}` });
+      expect(denied.statusCode).toBe(403);
+
+      const ok = await app.inject({ method: 'GET', url: `/s/${token}?code=sesame` });
+      expect(ok.json().file.name).toBe('shared.txt');
+      const dl = await app.inject({ method: 'GET', url: `/s/${token}/file/${fileId}?code=sesame` });
+      expect(dl.statusCode).toBe(200);
+    });
+
+    it('requires a session for an authenticated share', async () => {
+      const { auth, token } = await setupFileShare({ accessMode: 'AUTHENTICATED' });
+
+      const anon = await app.inject({ method: 'GET', url: `/s/${token}` });
+      expect(anon.json().requiresAuth).toBe(true);
+
+      const signedIn = await app.inject({ method: 'GET', url: `/s/${token}`, headers: { cookie: auth.cookie } });
+      expect(signedIn.json().file.name).toBe('shared.txt');
+    });
+
+    it('honours maxDownloads and revocation', async () => {
+      const { token, fileId } = await setupFileShare({ accessMode: 'PUBLIC', maxDownloads: 1 });
+
+      const first = await app.inject({ method: 'GET', url: `/s/${token}/file/${fileId}` });
+      expect(first.statusCode).toBe(200);
+      const second = await app.inject({ method: 'GET', url: `/s/${token}/file/${fileId}` });
+      expect(second.statusCode).toBe(410);
+
+      // Revoke and confirm the link is gone.
+      const share = await prisma.shareLink.findFirstOrThrow({ where: { token } });
+      const auth = await login(app, 's@test.local', 'correct-horse-battery');
+      const del = await app.inject({ method: 'DELETE', url: `/shares/${share.id}`, headers: authHeaders(auth) });
+      expect(del.statusCode).toBe(200);
+      const gone = await app.inject({ method: 'GET', url: `/s/${token}` });
+      expect(gone.statusCode).toBe(404);
+    });
+
+    it('refuses to share a vault folder', async () => {
+      await createUser({ email: 'sv@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 'sv@test.local', 'correct-horse-battery');
+      const vault = await app.inject({
+        method: 'POST',
+        url: '/folders',
+        headers: authHeaders(auth),
+        payload: { name: 'secret', isZeroKnowledge: true },
+      });
+      const folderId = vault.json().folder.id;
+      const res = await app.inject({
+        method: 'POST',
+        url: '/shares',
+        headers: authHeaders(auth),
+        payload: { folderId, accessMode: 'PUBLIC' },
+      });
+      expect(res.statusCode).toBe(400);
+    });
+  });
+
   describe('admin maintenance', () => {
     it('reconciles a drifted usedBytes counter', async () => {
       const admin = await createUser({

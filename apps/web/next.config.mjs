@@ -21,7 +21,10 @@ const csp = [
   "object-src 'none'",
   "frame-ancestors 'none'",
   "form-action 'self'",
-  "img-src 'self' data: blob:",
+  // Share previews stream image/audio/video/pdf from the API origin.
+  `img-src 'self' data: blob: ${apiOrigin}`.trim(),
+  `media-src 'self' blob: ${apiOrigin}`.trim(),
+  `frame-src 'self' ${apiOrigin}`.trim(),
   "font-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "script-src 'self' 'unsafe-inline'",

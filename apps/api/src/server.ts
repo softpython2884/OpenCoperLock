@@ -13,6 +13,8 @@ import { fileRoutes } from './routes/files.js';
 import { zkRoutes } from './routes/zk.js';
 import { quickRoutes } from './routes/quick.js';
 import { remoteRoutes } from './routes/remote.js';
+import { shareRoutes } from './routes/shares.js';
+import { sharePublicRoutes } from './routes/share-public.js';
 import { adminRoutes } from './routes/admin.js';
 
 export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
@@ -69,6 +71,8 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(zkRoutes, { prefix: '/zk' });
   await app.register(quickRoutes, { prefix: '/quick' });
   await app.register(remoteRoutes, { prefix: '/remote' });
+  await app.register(shareRoutes, { prefix: '/shares' });
+  await app.register(sharePublicRoutes, { prefix: '/s' });
   await app.register(adminRoutes, { prefix: '/admin' });
 
   app.setErrorHandler((err: { statusCode?: number; message?: string }, req, reply) => {

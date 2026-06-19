@@ -11,6 +11,7 @@ const NAV = [
   { href: '/drive', label: 'Drive' },
   { href: '/vault', label: 'Vault' },
   { href: '/remote', label: 'Remote' },
+  { href: '/shares', label: 'Shares' },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

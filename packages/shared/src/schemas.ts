@@ -4,7 +4,7 @@
  * sides never drift.
  */
 import { z } from 'zod';
-import { ENC_MODES, ROLES } from './constants.js';
+import { ENC_MODES, ROLES, SHARE_ACCESS_MODES, SHARE_VIEW_TYPES } from './constants.js';
 
 // ── Primitives ───────────────────────────────────────────────────────────────
 
@@ -132,6 +132,32 @@ export const updateSettingsSchema = z.object({
   globalStorageCapBytes: z.number().int().nonnegative(),
 });
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
+
+// ── Share links ──────────────────────────────────────────────────────────────
+
+/**
+ * Create a share for one file or one folder (exactly one of fileId/folderId). Zero-
+ * knowledge targets cannot be shared server-side and are rejected by the API.
+ */
+export const createShareSchema = z
+  .object({
+    fileId: cuidSchema.optional(),
+    folderId: cuidSchema.optional(),
+    viewType: z.enum(SHARE_VIEW_TYPES).default('PAGE'),
+    accessMode: z.enum(SHARE_ACCESS_MODES).default('PUBLIC'),
+    // Required when accessMode is CODE; ignored otherwise.
+    code: z.string().min(4).max(256).optional(),
+    expiresAt: z.coerce.date().nullable().optional(),
+    maxDownloads: z.number().int().positive().max(1_000_000).nullable().optional(),
+    allowDownload: z.boolean().optional().default(true),
+  })
+  .refine((v) => (v.fileId ? !v.folderId : !!v.folderId), {
+    message: 'Provide exactly one of fileId or folderId',
+  })
+  .refine((v) => v.accessMode !== 'CODE' || (v.code && v.code.length >= 4), {
+    message: 'A code of at least 4 characters is required for code-protected shares',
+  });
+export type CreateShareInput = z.infer<typeof createShareSchema>;
 
 // ── Zero-Knowledge vault ─────────────────────────────────────────────────────
 

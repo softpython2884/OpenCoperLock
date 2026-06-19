@@ -51,9 +51,15 @@ export async function collectOrphans(
   log: FastifyBaseLogger,
 ): Promise<OrphanResult> {
   if (!ctx.storage.list) return { scanned: 0, deleted: 0 };
-  const known = new Set(
-    (await prisma.fileObject.findMany({ select: { storageKey: true } })).map((f) => f.storageKey),
-  );
+  // Known = live file blobs + retained version blobs. Anything else is an orphan.
+  const [files, versions] = await Promise.all([
+    prisma.fileObject.findMany({ select: { storageKey: true } }),
+    prisma.fileVersion.findMany({ select: { storageKey: true } }),
+  ]);
+  const known = new Set<string>([
+    ...files.map((f) => f.storageKey),
+    ...versions.map((v) => v.storageKey),
+  ]);
   const cutoff = Date.now() - graceHours * 60 * 60 * 1000;
   let scanned = 0;
   let deleted = 0;

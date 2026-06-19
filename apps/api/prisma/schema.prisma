@@ -152,10 +152,29 @@ model FileObject {
   avStatus AvStatus @default(PENDING)
   createdAt DateTime @default(now())
 
-  shares ShareLink[]
+  shares   ShareLink[]
+  versions FileVersion[]
 
   @@index([ownerId])
   @@index([folderId])
+}
+
+// A prior revision of a SERVER-mode file (kept for text-like files). Holds its own
+// ciphertext blob and crypto material, so restoring is just a metadata swap.
+model FileVersion {
+  id         String     @id @default(cuid())
+  fileId     String
+  file       FileObject @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  storageKey String     @unique
+  sizeBytes  BigInt
+  mimeType   String
+  wrappedKey String
+  iv         String
+  authTag    String
+  sha256     String?
+  createdAt  DateTime   @default(now())
+
+  @@index([fileId])
 }
 
 model QuickUploadCode {

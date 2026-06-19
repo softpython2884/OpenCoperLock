@@ -131,6 +131,61 @@ runIf('API integration', () => {
     });
   });
 
+  describe('text file versioning', () => {
+    it('keeps prior content as versions and restores them', async () => {
+      const user = await createUser({ email: 'v2@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 'v2@test.local', 'correct-horse-battery');
+
+      const up1 = await uploadFile(app, '/files', auth, 'notes.txt', Buffer.from('version one'));
+      const fileId = up1.json().file.id;
+      // Re-upload same name -> creates a version, not a duplicate.
+      await uploadFile(app, '/files', auth, 'notes.txt', Buffer.from('version two!!'));
+
+      const list = await app.inject({ method: 'GET', url: `/files`, headers: { cookie: auth.cookie } });
+      expect(list.json().files).toHaveLength(1); // still one file, not two
+
+      const versions = await app.inject({
+        method: 'GET',
+        url: `/files/${fileId}/versions`,
+        headers: { cookie: auth.cookie },
+      });
+      expect(versions.json().versions).toHaveLength(1);
+      const versionId = versions.json().versions[0].id;
+
+      // Current content is "version two!!".
+      const cur = await app.inject({ method: 'GET', url: `/files/${fileId}/download`, headers: { cookie: auth.cookie } });
+      expect(Buffer.from(cur.rawPayload).toString()).toBe('version two!!');
+
+      // The version downloads the old bytes.
+      const vdl = await app.inject({
+        method: 'GET',
+        url: `/files/${fileId}/versions/${versionId}/download`,
+        headers: { cookie: auth.cookie },
+      });
+      expect(Buffer.from(vdl.rawPayload).toString()).toBe('version one');
+
+      // Restore the version -> current becomes "version one".
+      const restore = await app.inject({
+        method: 'POST',
+        url: `/files/${fileId}/versions/${versionId}/restore`,
+        headers: authHeaders(auth),
+      });
+      expect(restore.statusCode).toBe(200);
+      const after = await app.inject({ method: 'GET', url: `/files/${fileId}/download`, headers: { cookie: auth.cookie } });
+      expect(Buffer.from(after.rawPayload).toString()).toBe('version one');
+
+      // Usage reflects current + retained versions (all small, non-zero) and stays consistent.
+      const u = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+      const current = await prisma.fileObject.findUniqueOrThrow({ where: { id: fileId } });
+      const versionSum = await prisma.fileVersion.aggregate({
+        where: { fileId },
+        _sum: { sizeBytes: true },
+      });
+      const expected = Number(current.sizeBytes) + Number(versionSum._sum.sizeBytes ?? 0n);
+      expect(Number(u.usedBytes)).toBe(expected);
+    });
+  });
+
   describe('folders: rename, move, cycle protection', () => {
     it('prevents moving a folder into its own subtree', async () => {
       await createUser({ email: 'f@test.local', password: 'correct-horse-battery' });

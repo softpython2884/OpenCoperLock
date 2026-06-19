@@ -90,6 +90,30 @@ export default function DrivePage() {
     await Promise.all([loadFiles(currentId), refresh()]);
   }
 
+  /** List prior versions of a text file and optionally restore one. */
+  async function versions(file: PublicFile) {
+    try {
+      const res = await api.get<{ versions: { id: string; sizeBytes: number; createdAt: string }[] }>(
+        `/files/${file.id}/versions`,
+      );
+      if (res.versions.length === 0) {
+        window.alert('This file has no previous versions yet. Re-upload a text file with the same name to create one.');
+        return;
+      }
+      const lines = res.versions
+        .map((v, i) => `${i}: ${new Date(v.createdAt).toLocaleString()} (${formatBytes(v.sizeBytes)})`)
+        .join('\n');
+      const choice = window.prompt(`Previous versions of ${file.name}:\n${lines}\n\nEnter a number to RESTORE it (current content is kept as a new version), or leave blank to cancel.`, '');
+      if (!choice) return;
+      const v = res.versions[Number(choice)];
+      if (!v) return;
+      await api.post(`/files/${file.id}/versions/${v.id}/restore`);
+      await loadFiles(currentId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load versions');
+    }
+  }
+
   async function renameFile(file: PublicFile) {
     const name = window.prompt('New file name', file.name);
     if (!name || name === file.name) return;
@@ -257,6 +281,9 @@ export default function DrivePage() {
               </a>
               <button className="btn-ghost px-2 py-1" onClick={() => share('file', file.id)}>
                 Share
+              </button>
+              <button className="btn-ghost px-2 py-1" onClick={() => versions(file)}>
+                Versions
               </button>
               <button className="btn-ghost px-2 py-1" onClick={() => renameFile(file)}>
                 Rename

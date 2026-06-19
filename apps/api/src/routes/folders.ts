@@ -105,10 +105,16 @@ export const folderRoutes: FastifyPluginAsync = async (app) => {
 
     const ids = await collectSubtree(root.id, req.user!.id);
     const files = await prisma.fileObject.findMany({ where: { folderId: { in: ids } } });
+    const fileIds = files.map((f) => f.id);
+    const versions = await prisma.fileVersion.findMany({ where: { fileId: { in: fileIds } } });
     let freed = 0;
     for (const file of files) {
       await app.ctx.storage.delete(file.storageKey).catch((err) => req.log.warn({ err }, 'blob delete failed'));
       freed += Number(file.sizeBytes);
+    }
+    for (const v of versions) {
+      await app.ctx.storage.delete(v.storageKey).catch(() => {});
+      freed += Number(v.sizeBytes);
     }
     await prisma.fileObject.deleteMany({ where: { folderId: { in: ids } } });
     if (freed > 0) await adjustUsage(req.user!.id, -freed);

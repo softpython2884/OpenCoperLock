@@ -71,13 +71,38 @@ api.copper.forgenet.fr {
 
 ## 5. Backups
 
-Back up **together** (they are useless apart):
+The database (which holds the wrapped per-file keys) and the storage volume (which holds
+the ciphertext) are **useless apart** — back them up together. `MASTER_KEY` is the third
+piece and must be kept separately and securely; without it, SERVER-mode files cannot be
+decrypted even with the database and blobs.
 
-- the Postgres database (`pgdata` volume), and
-- the encrypted storage volume (`storage`).
+`scripts/backup.sh` bundles both into one timestamped archive (it reads `DATABASE_URL` and
+the storage paths from `.env`):
 
-Also store `MASTER_KEY` somewhere safe and separate. Without it, SERVER-mode files cannot
-be decrypted even with the database and blobs.
+```bash
+./scripts/backup.sh /var/backups/opencoperlock      # writes opencoperlock-<timestamp>.tar.gz
+```
+
+Automate it with cron (daily 03:30, keep 14 archives):
+
+```cron
+30 3 * * *  cd /opt/opencoperlock && BACKUP_RETENTION=14 ./scripts/backup.sh /var/backups/opencoperlock >> /var/log/ocl-backup.log 2>&1
+```
+
+To restore (destructive — stop the API first):
+
+```bash
+pm2 stop opencoperlock-api
+./scripts/restore.sh /var/backups/opencoperlock/opencoperlock-<timestamp>.tar.gz
+pm2 start opencoperlock-api
+```
+
+The restore re-applies the database dump and unpacks the storage directory. Make sure the
+`MASTER_KEY` in `.env` matches the one in use when the backup was taken.
+
+For Docker deployments the same scripts work if `pg_dump`/`pg_restore` are available on the
+host and the storage volume is mounted at the path in `.env`; otherwise snapshot the
+`pgdata` and `storage` volumes with your usual volume-backup tooling.
 
 ## 6. Updating
 

@@ -80,4 +80,24 @@ Account security lives under your email (top-right) → **Account**.
 - [ ] **Revoke session**: revoke another session → it is signed out (its next request fails).
 - [ ] **Sign out others**: "Sign out other sessions" keeps only the current device.
 
+## Backups & text-file versioning (lot 3)
+
+Backups (run on the server, needs `pg_dump`/`pg_restore`):
+
+- [ ] **Backup**: `./scripts/backup.sh ./backups` produces a `opencoperlock-<timestamp>.tar.gz`
+      containing `db.dump` and the storage archive.
+- [ ] **Restore**: `./scripts/restore.sh <archive>` (type `restore` to confirm) restores the
+      database and storage. Verify files still download and decrypt afterwards.
+- [ ] **Retention**: `BACKUP_RETENTION=3 ./scripts/backup.sh` keeps only the newest 3 archives.
+
+Versioning (text-like files: txt, md, csv, json, log, yml, …):
+
+- [ ] **Create a version**: upload `notes.txt`, then upload a changed `notes.txt` with the
+      same name into the same folder → the Drive still shows one file (not two).
+- [ ] **List/restore**: the file's **Versions** button lists prior versions; restoring one
+      makes it current and keeps the previous current content as a new version.
+- [ ] **Non-text files are not versioned**: re-uploading e.g. an image with the same name
+      creates a separate file (no versioning), as before.
+- [ ] **Quota**: deleting a versioned file frees the space of the file *and* its versions.
+
 <!-- New features are appended below as they are built. -->

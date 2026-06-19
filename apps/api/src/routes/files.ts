@@ -9,6 +9,12 @@ import {
   ingestPlaintext,
 } from '../services/ingest.js';
 import { decryptServerFile } from '../services/download.js';
+import {
+  findVersionTarget,
+  isVersionable,
+  pruneVersions,
+  snapshotVersion,
+} from '../services/versioning.js';
 import { adjustUsage, remainingAllowance } from '../services/quota.js';
 import { toPublicFile } from '../lib/serialize.js';
 import { audit } from '../services/audit.js';
@@ -51,6 +57,35 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     const storageKey = newStorageKey();
     try {
       const result = await ingestPlaintext(app.ctx, part.file, { maxBytes: allowance, storageKey });
+
+      // Versioning: re-uploading a text-like file under the same name keeps the old
+      // content as a version instead of creating a duplicate row.
+      const existing = isVersionable(part.filename, part.mimetype)
+        ? await findVersionTarget(req.user!.id, folderId ?? null, part.filename)
+        : null;
+
+      if (existing) {
+        await snapshotVersion(existing);
+        const file = await prisma.fileObject.update({
+          where: { id: existing.id },
+          data: {
+            sizeBytes: BigInt(result.sizeBytes),
+            mimeType: part.mimetype,
+            storageKey: result.storageKey,
+            wrappedKey: result.wrappedKey,
+            iv: result.iv,
+            authTag: result.authTag,
+            sha256: result.sha256,
+            avStatus: result.avStatus,
+          },
+        });
+        // New content adds to usage; the retained version keeps the old size.
+        await adjustUsage(req.user!.id, result.sizeBytes);
+        const freed = await pruneVersions(app.ctx, file.id);
+        if (freed > 0) await adjustUsage(req.user!.id, -freed);
+        await audit(req, 'file.version', { target: file.id });
+        return reply.code(201).send({ file: toPublicFile(file) });
+      }
 
       const file = await prisma.fileObject.create({
         data: {
@@ -139,15 +174,87 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     return { file: toPublicFile(updated) };
   });
 
-  // DELETE /files/:id — remove the blob and release quota.
+  // GET /files/:id/versions — list retained prior versions (newest first).
+  app.get('/:id/versions', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id } });
+    if (!file) return reply.code(404).send({ error: 'File not found' });
+    const versions = await prisma.fileVersion.findMany({
+      where: { fileId: id },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, sizeBytes: true, sha256: true, createdAt: true },
+    });
+    return {
+      versions: versions.map((v) => ({
+        id: v.id,
+        sizeBytes: Number(v.sizeBytes),
+        sha256: v.sha256,
+        createdAt: v.createdAt.toISOString(),
+      })),
+    };
+  });
+
+  // GET /files/:id/versions/:versionId/download — decrypt and stream a past version.
+  app.get('/:id/versions/:versionId/download', async (req, reply) => {
+    const { id, versionId } = req.params as { id: string; versionId: string };
+    const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id } });
+    if (!file) return reply.code(404).send({ error: 'File not found' });
+    const version = await prisma.fileVersion.findFirst({ where: { id: versionId, fileId: id } });
+    if (!version) return reply.code(404).send({ error: 'Version not found' });
+    reply
+      .header('Content-Type', version.mimeType)
+      .header('Content-Length', Number(version.sizeBytes))
+      .header('Content-Disposition', `attachment; filename="${encodeURIComponent(file.name)}"`);
+    return reply.send(decryptServerFile(app.ctx, version));
+  });
+
+  // POST /files/:id/versions/:versionId/restore — make a past version current. The current
+  // content is first snapshotted as a new version, so nothing is lost (a metadata swap).
+  app.post('/:id/versions/:versionId/restore', async (req, reply) => {
+    const { id, versionId } = req.params as { id: string; versionId: string };
+    const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id } });
+    if (!file) return reply.code(404).send({ error: 'File not found' });
+    const version = await prisma.fileVersion.findFirst({ where: { id: versionId, fileId: id } });
+    if (!version) return reply.code(404).send({ error: 'Version not found' });
+
+    await snapshotVersion(file);
+    const updated = await prisma.fileObject.update({
+      where: { id },
+      data: {
+        sizeBytes: version.sizeBytes,
+        mimeType: version.mimeType,
+        storageKey: version.storageKey,
+        wrappedKey: version.wrappedKey,
+        iv: version.iv,
+        authTag: version.authTag,
+        sha256: version.sha256,
+      },
+    });
+    // The restored version's blob is now the live content; remove its version row.
+    await prisma.fileVersion.delete({ where: { id: versionId } });
+    // Net usage change is zero: the old current blob becomes a version while the restored
+    // version's blob becomes current — both blobs remain referenced. Only pruning frees space.
+    const freed = await pruneVersions(app.ctx, id);
+    if (freed > 0) await adjustUsage(req.user!.id, -freed);
+    await audit(req, 'file.version.restore', { target: id });
+    return { file: toPublicFile(updated) };
+  });
+
+  // DELETE /files/:id — remove the blob, its versions, and release all their quota.
   app.delete('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id } });
     if (!file) return reply.code(404).send({ error: 'File not found' });
 
+    const versions = await prisma.fileVersion.findMany({ where: { fileId: id } });
+    let freed = Number(file.sizeBytes);
     await app.ctx.storage.delete(file.storageKey).catch((err) => req.log.warn({ err }, 'blob delete failed'));
-    await prisma.fileObject.delete({ where: { id: file.id } });
-    await adjustUsage(req.user!.id, -Number(file.sizeBytes));
+    for (const v of versions) {
+      await app.ctx.storage.delete(v.storageKey).catch(() => {});
+      freed += Number(v.sizeBytes);
+    }
+    await prisma.fileObject.delete({ where: { id: file.id } }); // cascades version rows
+    await adjustUsage(req.user!.id, -freed);
     await audit(req, 'file.delete', { target: file.id });
     return { ok: true };
   });

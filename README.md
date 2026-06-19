@@ -82,9 +82,21 @@ openssl rand -base64 32
 See [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) for production setup behind a reverse
 proxy with TLS (e.g. `copper.forgenet.fr`).
 
-### Quick start (bare-metal / PM2)
+### One-command install (dedicated server)
 
-Prefer running it natively on a dedicated server? Provide your own PostgreSQL, then:
+On a fresh Debian/Ubuntu box, the interactive wizard installs prerequisites and sets up
+PostgreSQL, `.env` (with generated secrets), the build, PM2, an nginx reverse proxy and a
+Let's Encrypt certificate:
+
+```bash
+git clone https://github.com/softpython2884/opencoperlock.git
+cd opencoperlock
+bash scripts/setup-wizard.sh
+```
+
+### Quick start (bare-metal / PM2, manual)
+
+Prefer to wire it up yourself? Provide your own PostgreSQL, then:
 
 ```bash
 cp .env.example .env        # edit secrets + paths

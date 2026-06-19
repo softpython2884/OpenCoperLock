@@ -89,6 +89,21 @@ docker compose -f infra/docker-compose.yml up --build -d
 Migrations are applied automatically on API start (`prisma migrate deploy`). The seed is
 idempotent and never overwrites an existing admin.
 
+## Guided install (recommended for a dedicated server)
+
+The interactive wizard does the entire bare-metal install for you on Debian/Ubuntu —
+prerequisites, PostgreSQL, `.env` with generated secrets, build, PM2, nginx and TLS:
+
+```bash
+bash scripts/setup-wizard.sh
+```
+
+It asks for your domain(s), admin account, storage path and limits, then offers to
+install Node/pnpm/PM2/PostgreSQL/nginx/certbot as needed. Secrets (`MASTER_KEY`,
+`SESSION_SECRET`, DB password) are generated for you and written to a `0600` `.env`.
+Re-run it any time; it backs up an existing `.env` first. The sections below document
+the same steps manually.
+
 ## Bare-metal with PM2 (dedicated server)
 
 For a dedicated Linux box you can run the two Node processes under

@@ -17,14 +17,27 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
-# Load .env so prisma (migrate) and the seed see DATABASE_URL, ADMIN_*, etc.
-set -a
-# shellcheck disable=SC1091
-. ./.env
-set +a
+# Read a single value from .env WITHOUT sourcing it, so secrets containing shell
+# metacharacters (spaces, $, backticks, quotes) are handled literally and safely.
+read_env() {
+  local key="$1" line val
+  line="$(grep -E "^${key}=" .env | tail -1 || true)"
+  val="${line#*=}"
+  # strip one layer of surrounding quotes if present
+  [[ "$val" == \"*\" ]] && val="${val:1:${#val}-2}"
+  [[ "$val" == \'*\' ]] && val="${val:1:${#val}-2}"
+  printf '%s' "$val"
+}
+
+# Export only what the build/migrate steps need (seed loads .env itself via dotenv).
+export DATABASE_URL="$(read_env DATABASE_URL)"
+export STORAGE_PATH="$(read_env STORAGE_PATH)"
+export QUARANTINE_PATH="$(read_env QUARANTINE_PATH)"
+[[ -n "$DATABASE_URL" ]] || { echo "ERROR: DATABASE_URL is not set in .env" >&2; exit 1; }
 
 # The browser bundle needs the *public* API URL baked in at build time.
-: "${NEXT_PUBLIC_API_URL:=${APP_API_URL:-http://localhost:4000}}"
+NEXT_PUBLIC_API_URL="$(read_env NEXT_PUBLIC_API_URL)"
+: "${NEXT_PUBLIC_API_URL:=http://localhost:4000}"
 export NEXT_PUBLIC_API_URL
 echo "==> Building web with NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}"
 

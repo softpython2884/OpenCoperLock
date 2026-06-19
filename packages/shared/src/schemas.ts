@@ -22,8 +22,20 @@ export const cuidSchema = z.string().min(1).max(64);
 export const loginSchema = z.object({
   email: emailSchema,
   password: z.string().min(1).max(256),
+  // Optional second factor: a 6-digit TOTP code or a recovery code.
+  totp: z.string().min(1).max(64).optional(),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
+
+// ── Two-factor ───────────────────────────────────────────────────────────────
+
+export const totpTokenSchema = z.object({
+  token: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code'),
+});
+
+export const passwordConfirmSchema = z.object({
+  password: z.string().min(1).max(256),
+});
 
 // ── Folders ──────────────────────────────────────────────────────────────────
 

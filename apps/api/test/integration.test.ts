@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../src/db.js';
+import { totpAt } from '../src/services/totp.js';
 import { authHeaders, buildTestApp, createUser, login, resetDb, uploadFile } from './helpers.js';
 
 // Integration tests require a database. Without one they skip so unit tests still run.
@@ -280,6 +281,88 @@ runIf('API integration', () => {
         payload: { folderId, accessMode: 'PUBLIC' },
       });
       expect(res.statusCode).toBe(400);
+    });
+  });
+
+  describe('two-factor and sessions', () => {
+    async function enableTwoFa(email: string) {
+      await createUser({ email, password: 'correct-horse-battery' });
+      const auth = await login(app, email, 'correct-horse-battery');
+      const setup = await app.inject({ method: 'POST', url: '/2fa/setup', headers: authHeaders(auth) });
+      const secret = setup.json().secret as string;
+      const enable = await app.inject({
+        method: 'POST',
+        url: '/2fa/enable',
+        headers: authHeaders(auth),
+        payload: { token: totpAt(secret, Date.now()) },
+      });
+      expect(enable.statusCode).toBe(200);
+      return { secret, recoveryCodes: enable.json().recoveryCodes as string[] };
+    }
+
+    it('requires a TOTP code after enabling, and accepts a recovery code', async () => {
+      const { secret, recoveryCodes } = await enableTwoFa('tfa@test.local');
+      expect(recoveryCodes).toHaveLength(10);
+
+      // Password alone is no longer enough.
+      const noCode = await app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        payload: { email: 'tfa@test.local', password: 'correct-horse-battery' },
+      });
+      expect(noCode.statusCode).toBe(401);
+      expect(noCode.json().code).toBe('TOTP_REQUIRED');
+
+      // A wrong code is rejected.
+      const wrong = await app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        payload: { email: 'tfa@test.local', password: 'correct-horse-battery', totp: '000000' },
+      });
+      expect(wrong.statusCode).toBe(401);
+
+      // The current TOTP works.
+      const ok = await app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        payload: { email: 'tfa@test.local', password: 'correct-horse-battery', totp: totpAt(secret, Date.now()) },
+      });
+      expect(ok.statusCode).toBe(200);
+
+      // A recovery code works once, then is consumed.
+      const rec = recoveryCodes[0];
+      const recOk = await app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        payload: { email: 'tfa@test.local', password: 'correct-horse-battery', totp: rec },
+      });
+      expect(recOk.statusCode).toBe(200);
+      const recAgain = await app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        payload: { email: 'tfa@test.local', password: 'correct-horse-battery', totp: rec },
+      });
+      expect(recAgain.statusCode).toBe(401);
+    });
+
+    it('lists and revokes sessions', async () => {
+      await createUser({ email: 'sess@test.local', password: 'correct-horse-battery' });
+      const a1 = await login(app, 'sess@test.local', 'correct-horse-battery');
+      await login(app, 'sess@test.local', 'correct-horse-battery'); // a second session
+
+      const list = await app.inject({ method: 'GET', url: '/auth/sessions', headers: { cookie: a1.cookie } });
+      expect(list.statusCode).toBe(200);
+      expect(list.json().sessions.length).toBe(2);
+      expect(list.json().sessions.some((s: { current: boolean }) => s.current)).toBe(true);
+
+      const revoked = await app.inject({
+        method: 'DELETE',
+        url: '/auth/sessions',
+        headers: authHeaders(a1),
+      });
+      expect(revoked.json().revoked).toBe(1);
+      const after = await app.inject({ method: 'GET', url: '/auth/sessions', headers: { cookie: a1.cookie } });
+      expect(after.json().sessions.length).toBe(1);
     });
   });
 

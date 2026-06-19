@@ -61,4 +61,23 @@ then copies the link. Manage them under the **Shares** tab.
 - [ ] **Revoke**: revoking in the Shares tab makes the link 404 immediately.
 - [ ] **ZK guard**: a vault file/folder cannot be shared (the Share action errors).
 
+## Two-factor auth, recovery codes & sessions (lot 2)
+
+Account security lives under your email (top-right) → **Account**.
+
+- [ ] **Enable 2FA**: Account → Enable two-factor → scan the QR with Google Authenticator
+      (or enter the secret manually) → enter the 6-digit code → 10 recovery codes are shown
+      once. Save them.
+- [ ] **Login with 2FA**: sign out, sign in → after the password you are asked for the
+      6-digit code; a wrong code is refused, the right one logs you in.
+- [ ] **Recovery code**: at the 2FA prompt, enter one of the saved recovery codes instead;
+      it works once and is then consumed (reusing it fails).
+- [ ] **Regenerate recovery codes**: Account → Regenerate (password required) issues a new
+      set and invalidates the old.
+- [ ] **Disable 2FA**: Account → Disable (password required); login no longer asks for a code.
+- [ ] **Sessions**: Account → Active sessions lists each session with IP, device and last-seen,
+      marking the current one. Sign in from another browser → it appears in the list.
+- [ ] **Revoke session**: revoke another session → it is signed out (its next request fails).
+- [ ] **Sign out others**: "Sign out other sessions" keeps only the current device.
+
 <!-- New features are appended below as they are built. -->

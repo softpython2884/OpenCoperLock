@@ -9,7 +9,7 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import { CSRF_HEADER, SESSION_COOKIE, safeEqual } from '@opencoperlock/shared';
-import { getSession } from '../services/session.js';
+import { getSession, touchSession } from '../services/session.js';
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -27,6 +27,8 @@ const authPlugin: FastifyPluginAsync = async (app) => {
     if (!session) return;
     req.user = session.user;
     req.sessionData = { id: session.id, csrfSecret: session.csrfSecret };
+    // Rolling "last seen" for the session-management view (throttled internally).
+    void touchSession(session.id, session.lastSeenAt);
   });
 
   function enforceCsrf(req: FastifyRequest, reply: FastifyReply): boolean {

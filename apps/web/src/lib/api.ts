@@ -80,8 +80,12 @@ export interface AuthResponse {
   csrfToken: string;
 }
 
-export async function login(email: string, password: string): Promise<AuthResponse> {
-  const res = await api.post<AuthResponse>('/auth/login', { email, password });
+export async function login(
+  email: string,
+  password: string,
+  totp?: string,
+): Promise<AuthResponse> {
+  const res = await api.post<AuthResponse>('/auth/login', { email, password, totp });
   setCsrfToken(res.csrfToken);
   return res;
 }

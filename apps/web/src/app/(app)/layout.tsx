@@ -40,7 +40,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <header className="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-6">
-            <span className="font-semibold">🔐 OpenCoperLock</span>
+            <span className="font-semibold">OpenCoperLock</span>
             <nav className="flex gap-1">
               {items.map((item) => (
                 <Link
@@ -60,7 +60,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3 text-sm">
             <span className="hidden text-neutral-500 sm:inline">{quotaLabel}</span>
             <span className="text-neutral-400">·</span>
-            <span className="text-neutral-500">{user.email}</span>
+            <Link href="/account" className="text-neutral-500 hover:text-accent">
+              {user.email}
+            </Link>
             <button
               className="btn-ghost px-2 py-1"
               onClick={async () => {

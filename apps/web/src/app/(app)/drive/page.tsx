@@ -7,8 +7,9 @@
  *                server never sees. The passphrase is cached in sessionStorage for the tab
  *                so it is asked once per session, then used to derive the vault key.
  *
- * Inside a space you can create folders, upload (drag & drop + progress), download, delete,
- * and (for normal spaces) rename / move / share / browse versions. Grid or list view.
+ * Inside a space you can create folders, upload (drag & drop + progress), open files in an
+ * in-app viewer, download, delete, and (for normal spaces) rename / move / share / browse
+ * versions. Grid or list view. All prompts/confirmations use the in-app dialog system.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -29,17 +30,19 @@ import {
   Home,
   Lock,
   ShieldCheck,
-  FileText,
-  Image as ImageIcon,
-  Film,
-  Music,
   KeyRound,
+  Eye,
+  Copy,
+  Check,
 } from 'lucide-react';
 import type { PublicFile, PublicFolder } from '@opencoperlock/shared/client';
-import { formatBytes, mimeKind } from '@opencoperlock/shared/client';
+import { formatBytes } from '@opencoperlock/shared/client';
 import { api, API_URL, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { decryptBlob, decryptName, deriveVaultKey, encryptFile } from '@/lib/zk';
+import { fileVisual } from '@/lib/fileType';
+import { FileViewer, type ViewerSource } from '@/components/FileViewer';
+import { confirm, prompt, choose, toast } from '@/components/ui/overlays';
 
 interface ZkFile {
   id: string;
@@ -52,14 +55,6 @@ interface ZkFile {
 
 function passKey(spaceId: string) {
   return `ocl_pass_${spaceId}`;
-}
-
-function fileIcon(name: string, mime?: string) {
-  const kind = mime ? mimeKind(mime) : 'other';
-  if (kind === 'image') return ImageIcon;
-  if (kind === 'video') return Film;
-  if (kind === 'audio') return Music;
-  return FileText;
 }
 
 export default function EspacesPage() {
@@ -75,6 +70,8 @@ export default function EspacesPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [viewing, setViewing] = useState<ViewerSource | null>(null);
+  const [shareLink, setShareLink] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   // passphrase prompt
@@ -111,34 +108,30 @@ export default function EspacesPage() {
     return res.folders;
   }, []);
 
-  const loadItems = useCallback(
-    async (folderId: string, zk: boolean, key: CryptoKey | null) => {
-      if (zk) {
-        const res = await api.get<{ files: ZkFile[] }>(`/zk/files?folderId=${folderId}`);
-        const withNames = key
-          ? await Promise.all(
-              res.files.map(async (f) => ({
-                ...f,
-                plainName: await decryptName(key, f.encryptedName, f.wrappedKey),
-              })),
-            )
-          : res.files;
-        setZkFiles(withNames);
-        setFiles([]);
-      } else {
-        const res = await api.get<{ files: PublicFile[] }>(`/files?folderId=${folderId}`);
-        setFiles(res.files);
-        setZkFiles([]);
-      }
-    },
-    [],
-  );
+  const loadItems = useCallback(async (folderId: string, zk: boolean, key: CryptoKey | null) => {
+    if (zk) {
+      const res = await api.get<{ files: ZkFile[] }>(`/zk/files?folderId=${folderId}`);
+      const withNames = key
+        ? await Promise.all(
+            res.files.map(async (f) => ({
+              ...f,
+              plainName: await decryptName(key, f.encryptedName, f.wrappedKey),
+            })),
+          )
+        : res.files;
+      setZkFiles(withNames);
+      setFiles([]);
+    } else {
+      const res = await api.get<{ files: PublicFile[] }>(`/files?folderId=${folderId}`);
+      setFiles(res.files);
+      setZkFiles([]);
+    }
+  }, []);
 
   useEffect(() => {
     void loadFolders().catch((e) => setError(String(e)));
   }, [loadFolders]);
 
-  // Reload items whenever we change folder/key.
   useEffect(() => {
     if (!activeSpaceId || !currentFolderId) return;
     if (isZk && !vaultKey) return; // wait for passphrase
@@ -179,21 +172,28 @@ export default function EspacesPage() {
   }
 
   async function createSpace() {
-    const name = window.prompt('Nom du nouvel espace');
+    const name = await prompt({ title: 'Nouvel espace', label: 'Nom de l’espace', placeholder: 'Documents…' });
     if (!name) return;
-    const secured = window.confirm(
-      'Créer un espace SÉCURISÉ (Zero-Knowledge, chiffré dans le navigateur) ?\n\nOK = sécurisé · Annuler = espace normal (chiffré côté serveur).',
-    );
+    const kind = await choose<'normal' | 'secured'>({
+      title: 'Type d’espace',
+      message: 'Comment vos fichiers doivent-ils être protégés ?',
+      options: [
+        { value: 'normal', label: 'Espace normal', description: 'Chiffré côté serveur · antivirus, partage, aperçu.' },
+        { value: 'secured', label: 'Espace sécurisé (Zero-Knowledge)', description: 'Chiffré dans le navigateur · le serveur est aveugle.' },
+      ],
+    });
+    if (!kind) return;
     try {
-      await api.post('/folders', { name, isZeroKnowledge: secured });
+      await api.post('/folders', { name, isZeroKnowledge: kind === 'secured' });
       await loadFolders();
+      toast('Espace créé', 'success');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Création impossible');
     }
   }
 
   async function createFolder() {
-    const name = window.prompt('Nom du dossier');
+    const name = await prompt({ title: 'Nouveau dossier', label: 'Nom du dossier' });
     if (!name) return;
     try {
       await api.post('/folders', { name, parentId: currentFolderId, isZeroKnowledge: isZk });
@@ -237,6 +237,7 @@ export default function EspacesPage() {
         }
       }
       await Promise.all([loadItems(currentFolderId, isZk, vaultKey), refresh()]);
+      toast(`${arr.length} fichier${arr.length > 1 ? 's' : ''} importé${arr.length > 1 ? 's' : ''}`, 'success');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Échec de l'envoi");
     } finally {
@@ -246,16 +247,51 @@ export default function EspacesPage() {
     }
   }
 
-  async function downloadZk(f: ZkFile) {
-    if (!vaultKey) return;
+  function openFile(f: PublicFile) {
+    setViewing({
+      name: f.name,
+      mime: f.mimeType,
+      sizeBytes: f.sizeBytes,
+      url: api.url(`/files/${f.id}/download`),
+    });
+  }
+
+  async function decryptZkBlob(f: ZkFile): Promise<Blob | null> {
+    if (!vaultKey) return null;
     const res = await fetch(`${API_URL}/zk/files/${f.id}/blob`, { credentials: 'include' });
-    const blob = await decryptBlob(vaultKey, await res.arrayBuffer(), f.iv, f.wrappedKey);
+    return decryptBlob(vaultKey, await res.arrayBuffer(), f.iv, f.wrappedKey);
+  }
+
+  function saveBlob(blob: Blob, name: string) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = f.plainName && !f.plainName.startsWith('🔒') ? f.plainName : 'fichier';
+    a.download = name;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function openZk(f: ZkFile) {
+    const name = f.plainName && !f.plainName.startsWith('🔒') ? f.plainName : 'fichier';
+    try {
+      const blob = await decryptZkBlob(f);
+      if (!blob) return;
+      setViewing({
+        name,
+        mime: blob.type || undefined,
+        sizeBytes: f.sizeBytes,
+        blob,
+        onDownload: () => saveBlob(blob, name),
+      });
+    } catch {
+      toast('Déchiffrement impossible', 'error');
+    }
+  }
+
+  async function downloadZk(f: ZkFile) {
+    const name = f.plainName && !f.plainName.startsWith('🔒') ? f.plainName : 'fichier';
+    const blob = await decryptZkBlob(f);
+    if (blob) saveBlob(blob, name);
   }
 
   async function reloadCurrent() {
@@ -263,23 +299,25 @@ export default function EspacesPage() {
   }
 
   async function deleteFile(id: string) {
-    if (!window.confirm('Supprimer ce fichier ?')) return;
+    if (!(await confirm({ title: 'Supprimer ce fichier ?', danger: true, confirmLabel: 'Supprimer' }))) return;
     await api.del(isZk ? `/zk/files/${id}` : `/files/${id}`);
     await reloadCurrent();
+    toast('Fichier supprimé', 'success');
   }
   async function deleteFolder(id: string) {
-    if (!window.confirm('Supprimer ce dossier et tout son contenu ?')) return;
+    if (!(await confirm({ title: 'Supprimer ce dossier ?', message: 'Tout son contenu sera supprimé.', danger: true, confirmLabel: 'Supprimer' }))) return;
     await api.del(`/folders/${id}`);
     await Promise.all([loadFolders(), refresh()]);
+    toast('Dossier supprimé', 'success');
   }
   async function renameFile(f: PublicFile) {
-    const name = window.prompt('Nouveau nom', f.name);
+    const name = await prompt({ title: 'Renommer', label: 'Nouveau nom', defaultValue: f.name });
     if (!name || name === f.name) return;
     await api.patch(`/files/${f.id}`, { name });
     await reloadCurrent();
   }
   async function renameFolder(f: PublicFolder) {
-    const name = window.prompt('Nouveau nom', f.name);
+    const name = await prompt({ title: 'Renommer le dossier', label: 'Nouveau nom', defaultValue: f.name });
     if (!name || name === f.name) return;
     await api.patch(`/folders/${f.id}`, { name });
     await loadFolders();
@@ -289,32 +327,50 @@ export default function EspacesPage() {
       { id: null as string | null, name: 'Racine de l’espace' },
       ...allFolders.filter((f) => f.id !== id && f.isZeroKnowledge === isZk),
     ];
-    const choice = window.prompt(
-      `Déplacer vers :\n${targets.map((t, i) => `${i}: ${t.name}`).join('\n')}`,
-      '0',
-    );
-    if (choice === null) return;
-    const t = targets[Number(choice)];
-    if (!t) return;
-    await api.patch(`/${kind}s/${id}`, { folderId: t.id, parentId: t.id });
+    const dest = await choose<string | '__root__'>({
+      title: 'Déplacer vers',
+      options: targets.map((t) => ({ value: t.id ?? '__root__', label: t.name })),
+    });
+    if (dest === null) return;
+    const target = dest === '__root__' ? null : dest;
+    await api.patch(`/${kind}s/${id}`, { folderId: target, parentId: target });
     await Promise.all([loadFolders(), reloadCurrent()]);
+    toast('Déplacé', 'success');
   }
   async function share(kind: 'file' | 'folder', id: string) {
-    const mode = window.prompt('Accès : 1 = tout le monde, 2 = avec un code, 3 = comptes only', '1');
-    if (mode === null) return;
-    const accessMode = mode === '2' ? 'CODE' : mode === '3' ? 'AUTHENTICATED' : 'PUBLIC';
-    const viewType = window.confirm('OK = page d’aperçu · Annuler = fichier brut') ? 'PAGE' : 'RAW';
+    const accessMode = await choose<'PUBLIC' | 'CODE' | 'AUTHENTICATED'>({
+      title: 'Partager',
+      message: 'Qui peut ouvrir ce lien ?',
+      options: [
+        { value: 'PUBLIC', label: 'Tout le monde', description: 'Toute personne disposant du lien.' },
+        { value: 'CODE', label: 'Avec un code', description: 'Lien + code d’accès requis.' },
+        { value: 'AUTHENTICATED', label: 'Comptes uniquement', description: 'Réservé aux utilisateurs connectés.' },
+      ],
+    });
+    if (!accessMode) return;
+    const viewType = await choose<'PAGE' | 'RAW'>({
+      title: 'Type de lien',
+      options: [
+        { value: 'PAGE', label: 'Page d’aperçu', description: 'Page de présentation avec aperçu et téléchargement.' },
+        { value: 'RAW', label: 'Fichier brut', description: 'Ouvre directement le fichier.' },
+      ],
+    });
+    if (!viewType) return;
     let code: string | undefined;
     if (accessMode === 'CODE') {
-      code = window.prompt('Code d’accès (min 4)') ?? undefined;
-      if (!code || code.length < 4) return;
+      const entered = await prompt({ title: 'Code d’accès', label: 'Au moins 4 caractères', password: true });
+      if (!entered || entered.length < 4) {
+        toast('Code trop court', 'error');
+        return;
+      }
+      code = entered;
     }
     try {
       const body = kind === 'file' ? { fileId: id } : { folderId: id };
       const res = await api.post<{ share: { token: string } }>('/shares', { ...body, accessMode, viewType, code });
       const link = `${window.location.origin}/s/${res.share.token}`;
       await navigator.clipboard?.writeText(link).catch(() => {});
-      window.prompt('Lien de partage (copié) :', link);
+      setShareLink(link);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Partage impossible');
     }
@@ -325,18 +381,22 @@ export default function EspacesPage() {
         `/files/${f.id}/versions`,
       );
       if (res.versions.length === 0) {
-        window.alert('Aucune version antérieure. Ré-uploade un fichier texte du même nom pour en créer.');
+        toast('Aucune version antérieure pour ce fichier.', 'info');
         return;
       }
-      const lines = res.versions
-        .map((v, i) => `${i}: ${new Date(v.createdAt).toLocaleString()} (${formatBytes(v.sizeBytes)})`)
-        .join('\n');
-      const c = window.prompt(`Versions de ${f.name} :\n${lines}\n\nNuméro à restaurer (vide = annuler)`, '');
-      if (!c) return;
-      const v = res.versions[Number(c)];
-      if (!v) return;
-      await api.post(`/files/${f.id}/versions/${v.id}/restore`);
+      const pick = await choose<string>({
+        title: `Versions de ${f.name}`,
+        message: 'Choisissez une version à restaurer.',
+        options: res.versions.map((v) => ({
+          value: v.id,
+          label: new Date(v.createdAt).toLocaleString(),
+          description: formatBytes(v.sizeBytes),
+        })),
+      });
+      if (!pick) return;
+      await api.post(`/files/${f.id}/versions/${pick}/restore`);
       await reloadCurrent();
+      toast('Version restaurée', 'success');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Versions indisponibles');
     }
@@ -386,17 +446,17 @@ export default function EspacesPage() {
             ))}
           </div>
         )}
+        {viewing && <FileViewer source={viewing} onClose={() => setViewing(null)} />}
       </div>
     );
   }
 
-  // Inside a space
   const needPass = isZk && !vaultKey;
 
   return (
     <div className="space-y-5">
       {/* breadcrumb */}
-      <div className="flex items-center gap-1.5 text-sm text-zinc-500">
+      <div className="flex flex-wrap items-center gap-1.5 text-sm text-zinc-500">
         <button className="flex items-center gap-1 hover:text-zinc-200" onClick={leaveSpace}>
           <Home size={15} /> Espaces
         </button>
@@ -418,7 +478,7 @@ export default function EspacesPage() {
         subtitle={isZk ? 'Dossier sécurisé · Zero-Knowledge' : 'Dossier chiffré côté serveur'}
         badge={isZk ? 'secured' : undefined}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg border border-white/10 bg-white/[0.03] p-0.5">
             <ViewBtn active={view === 'list'} onClick={() => setView('list')} icon={ListIcon} />
             <ViewBtn active={view === 'grid'} onClick={() => setView('grid')} icon={LayoutGrid} />
@@ -433,13 +493,7 @@ export default function EspacesPage() {
           >
             <Upload size={16} /> {busy ?? 'Importer'}
           </button>
-          <input
-            ref={fileInput}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => onUpload(e.target.files)}
-          />
+          <input ref={fileInput} type="file" multiple className="hidden" onChange={(e) => onUpload(e.target.files)} />
         </div>
       </Header>
 
@@ -452,11 +506,7 @@ export default function EspacesPage() {
       )}
 
       {needPass ? (
-        <Empty
-          icon={KeyRound}
-          title="Espace verrouillé"
-          hint="Entrez la phrase de passe de cet espace pour le déverrouiller."
-        >
+        <Empty icon={KeyRound} title="Espace verrouillé" hint="Entrez la phrase de passe de cet espace pour le déverrouiller.">
           <button className="btn-primary" onClick={() => setAskPass(activeSpace)}>
             <Lock size={16} /> Déverrouiller
           </button>
@@ -482,13 +532,35 @@ export default function EspacesPage() {
           ) : view === 'grid' ? (
             <div className="grid grid-cols-2 gap-3 p-2 sm:grid-cols-3 lg:grid-cols-4">
               {childFolders.map((f) => (
-                <GridCard key={f.id} icon={isZk ? FolderLock : Folder} name={f.name} onOpen={() => setCurrentFolderId(f.id)} />
+                <GridCard
+                  key={f.id}
+                  iconNode={
+                    isZk ? <FolderLock size={30} className="text-violet-300" /> : <Folder size={30} className="text-zinc-400" />
+                  }
+                  name={f.name}
+                  onOpen={() => setCurrentFolderId(f.id)}
+                />
               ))}
-              {files.map((f) => (
-                <GridCard key={f.id} icon={fileIcon(f.name, f.mimeType)} name={f.name} sub={formatBytes(f.sizeBytes)} />
-              ))}
+              {files.map((f) => {
+                const v = fileVisual(f.name, f.mimeType);
+                return (
+                  <GridCard
+                    key={f.id}
+                    iconNode={<v.Icon size={30} className={v.color} />}
+                    name={f.name}
+                    sub={formatBytes(f.sizeBytes)}
+                    onOpen={() => openFile(f)}
+                  />
+                );
+              })}
               {zkFiles.map((f) => (
-                <GridCard key={f.id} icon={Lock} name={f.plainName ?? '🔒'} sub={formatBytes(f.sizeBytes)} />
+                <GridCard
+                  key={f.id}
+                  iconNode={<Lock size={30} className="text-violet-300" />}
+                  name={f.plainName ?? '🔒'}
+                  sub={formatBytes(f.sizeBytes)}
+                  onOpen={() => openZk(f)}
+                />
               ))}
             </div>
           ) : (
@@ -508,15 +580,18 @@ export default function EspacesPage() {
               ))}
 
               {files.map((f) => {
-                const Icon = fileIcon(f.name, f.mimeType);
+                const v = fileVisual(f.name, f.mimeType);
                 return (
                   <div key={f.id} className="row">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <Icon size={18} className="text-zinc-400" />
+                    <button className="flex min-w-0 items-center gap-3 text-left" onClick={() => openFile(f)}>
+                      <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${v.bg} ${v.color}`}>
+                        <v.Icon size={16} />
+                      </span>
                       <span className="truncate font-medium text-zinc-100">{f.name}</span>
                       <span className="shrink-0 text-xs text-zinc-500">{formatBytes(f.sizeBytes)}</span>
-                    </div>
+                    </button>
                     <RowActions>
+                      <IconBtn title="Ouvrir" icon={Eye} onClick={() => openFile(f)} />
                       <a className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100" title="Télécharger" href={api.url(`/files/${f.id}/download`)}>
                         <Download size={16} />
                       </a>
@@ -532,12 +607,15 @@ export default function EspacesPage() {
 
               {zkFiles.map((f) => (
                 <div key={f.id} className="row">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <Lock size={18} className="text-violet-300" />
+                  <button className="flex min-w-0 items-center gap-3 text-left" onClick={() => openZk(f)}>
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-violet-500/10 text-violet-300">
+                      <Lock size={16} />
+                    </span>
                     <span className="truncate font-medium text-zinc-100">{f.plainName ?? '🔒'}</span>
                     <span className="shrink-0 text-xs text-zinc-500">{formatBytes(f.sizeBytes)}</span>
-                  </div>
+                  </button>
                   <RowActions>
+                    <IconBtn title="Ouvrir" icon={Eye} onClick={() => openZk(f)} />
                     <IconBtn title="Télécharger" icon={Download} onClick={() => downloadZk(f)} />
                     <IconBtn title="Supprimer" danger icon={Trash2} onClick={() => deleteFile(f.id)} />
                   </RowActions>
@@ -562,8 +640,8 @@ export default function EspacesPage() {
               </div>
             </div>
             <p className="text-sm text-zinc-400">
-              Cette phrase de passe chiffre vos fichiers dans le navigateur. Le serveur ne la voit
-              jamais — elle est irrécupérable si vous l’oubliez.
+              Cette phrase de passe chiffre vos fichiers dans le navigateur. Le serveur ne la voit jamais — elle est
+              irrécupérable si vous l’oubliez.
             </p>
             <form
               onSubmit={(e) => {
@@ -592,6 +670,12 @@ export default function EspacesPage() {
           </div>
         </Modal>
       )}
+
+      {/* Share-link result modal */}
+      {shareLink && <ShareLinkModal link={shareLink} onClose={() => setShareLink(null)} />}
+
+      {/* In-app file viewer */}
+      {viewing && <FileViewer source={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }
@@ -667,12 +751,12 @@ function IconBtn({
 }
 
 function GridCard({
-  icon: Icon,
+  iconNode,
   name,
   sub,
   onOpen,
 }: {
-  icon: typeof Folder;
+  iconNode: React.ReactNode;
   name: string;
   sub?: string;
   onOpen?: () => void;
@@ -682,7 +766,7 @@ function GridCard({
       onClick={onOpen}
       className="card flex flex-col items-center gap-2 py-5 text-center transition hover:border-white/15 hover:bg-white/[0.04]"
     >
-      <Icon size={30} className="text-zinc-400" />
+      {iconNode}
       <span className="line-clamp-2 w-full break-words text-sm font-medium text-zinc-100">{name}</span>
       {sub && <span className="text-xs text-zinc-500">{sub}</span>}
     </button>
@@ -715,9 +799,7 @@ function Empty({
 }
 
 function ErrorLine({ msg }: { msg: string }) {
-  return (
-    <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-300">{msg}</div>
-  );
+  return <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-300">{msg}</div>;
 }
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
@@ -727,5 +809,42 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
         {children}
       </div>
     </div>
+  );
+}
+
+function ShareLinkModal({ link, onClose }: { link: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Modal onClose={onClose}>
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent-soft text-violet-300">
+            <Share2 size={20} />
+          </span>
+          <div>
+            <h3 className="font-semibold text-zinc-100">Lien de partage prêt</h3>
+            <p className="text-xs text-zinc-500">Copié dans le presse-papiers.</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <input readOnly className="input font-mono text-xs" value={link} onFocus={(e) => e.target.select()} />
+          <button
+            className="btn-ghost shrink-0"
+            onClick={async () => {
+              await navigator.clipboard?.writeText(link).catch(() => {});
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+          >
+            {copied ? <Check size={16} /> : <Copy size={16} />}
+          </button>
+        </div>
+        <div className="flex justify-end">
+          <button className="btn-primary" onClick={onClose}>
+            Terminé
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }

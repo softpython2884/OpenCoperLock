@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, API_URL, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { prompt } from '@/components/ui/overlays';
 
 interface TwoFaStatus {
   enabled: boolean;
@@ -74,7 +75,7 @@ export default function AccountPage() {
   }
 
   async function disable() {
-    const password = window.prompt('Confirm your password to disable two-factor');
+    const password = await prompt({ title: 'Désactiver la 2FA', label: 'Confirmez votre mot de passe', password: true });
     if (!password) return;
     await wrap(async () => {
       await api.post('/2fa/disable', { password });
@@ -84,7 +85,7 @@ export default function AccountPage() {
   }
 
   async function regenerate() {
-    const password = window.prompt('Confirm your password to regenerate recovery codes');
+    const password = await prompt({ title: 'Régénérer les codes de secours', label: 'Confirmez votre mot de passe', password: true });
     if (!password) return;
     await wrap(async () => {
       const res = await api.post<{ recoveryCodes: string[] }>('/2fa/recovery/regenerate', { password });
@@ -107,9 +108,12 @@ export default function AccountPage() {
   }
 
   async function deleteAccount() {
-    const password = window.prompt(
-      'This permanently deletes your account and all your files. Enter your password to confirm.',
-    );
+    const password = await prompt({
+      title: 'Supprimer le compte',
+      message: 'Cette action supprime définitivement votre compte et tous vos fichiers. Irréversible.',
+      label: 'Confirmez votre mot de passe',
+      password: true,
+    });
     if (!password) return;
     await wrap(async () => {
       await api.post('/account/delete', { password });

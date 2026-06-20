@@ -63,4 +63,26 @@ body {
   .row {
     @apply flex items-center justify-between gap-3 rounded-xl border border-transparent bg-white/[0.02] px-4 py-3 transition hover:border-white/10 hover:bg-white/[0.04];
   }
+  /* Long-form text for the legal / about pages. */
+  .legal-prose h1 {
+    @apply text-2xl font-semibold tracking-tight text-white;
+  }
+  .legal-prose h2 {
+    @apply mt-8 text-lg font-semibold text-zinc-100;
+  }
+  .legal-prose p {
+    @apply text-sm leading-relaxed text-zinc-400;
+  }
+  .legal-prose ul {
+    @apply list-disc space-y-1 pl-5 text-sm leading-relaxed text-zinc-400;
+  }
+  .legal-prose a {
+    @apply text-violet-300 hover:underline;
+  }
+  .legal-prose code {
+    @apply rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-xs text-zinc-200;
+  }
+  .legal-prose strong {
+    @apply font-semibold text-zinc-200;
+  }
 }

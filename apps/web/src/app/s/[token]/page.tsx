@@ -7,9 +7,13 @@
  * expiry, and download-disabled flag.
  */
 import { use, useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { Download } from 'lucide-react';
 import type { PublicShareView, ShareEntry } from '@opencoperlock/shared/client';
 import { formatBytes } from '@opencoperlock/shared/client';
 import { API_URL, api, ApiError } from '@/lib/api';
+import { Wordmark } from '@/components/Wordmark';
+import { fileVisual } from '@/lib/fileType';
 
 function fileUrl(token: string, fileId: string, opts: { inline?: boolean; code?: string }): string {
   const q = new URLSearchParams();
@@ -27,18 +31,21 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
 
-  const load = useCallback(async (withCode?: string) => {
-    setError(null);
-    try {
-      const q = withCode ? `?code=${encodeURIComponent(withCode)}` : '';
-      const res = await api.get<PublicShareView>(`/s/${token}${q}`);
-      setView(res);
-      if (withCode && res.requiresCode) setError('Incorrect code.');
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 404) setNotFound(true);
-      else setError(err instanceof ApiError ? err.message : 'Could not load this link');
-    }
-  }, [token]);
+  const load = useCallback(
+    async (withCode?: string) => {
+      setError(null);
+      try {
+        const q = withCode ? `?code=${encodeURIComponent(withCode)}` : '';
+        const res = await api.get<PublicShareView>(`/s/${token}${q}`);
+        setView(res);
+        if (withCode && res.requiresCode) setError('Code incorrect.');
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) setNotFound(true);
+        else setError(err instanceof ApiError ? err.message : 'Impossible de charger ce lien');
+      }
+    },
+    [token],
+  );
 
   useEffect(() => {
     void load();
@@ -51,15 +58,15 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
     }
   }, [view, token, submittedCode]);
 
-  if (notFound) return <Centered title="Link not found" subtitle="This share link is invalid or has been revoked." />;
-  if (!view) return <Centered title="Loading…" />;
-  if (view.expired) return <Centered title="Link expired" subtitle="This share is no longer available." />;
+  if (notFound) return <Centered title="Lien introuvable" subtitle="Ce lien de partage est invalide ou a été révoqué." />;
+  if (!view) return <Centered title="Chargement…" />;
+  if (view.expired) return <Centered title="Lien expiré" subtitle="Ce partage n’est plus disponible." />;
 
   if (view.requiresAuth) {
     return (
-      <Centered title="Sign-in required" subtitle="This link is restricted to account holders.">
+      <Centered title="Connexion requise" subtitle="Ce lien est réservé aux titulaires d’un compte.">
         <a className="btn-primary" href="/login">
-          Sign in
+          Se connecter
         </a>
       </Centered>
     );
@@ -67,7 +74,7 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
 
   if (view.requiresCode) {
     return (
-      <Centered title="Protected link" subtitle="Enter the code to access this share.">
+      <Centered title="Lien protégé" subtitle="Entrez le code pour accéder à ce partage.">
         <form
           className="flex w-full max-w-xs flex-col gap-2"
           onSubmit={(e) => {
@@ -81,43 +88,47 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
             type="password"
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder="Access code"
+            placeholder="Code d’accès"
             autoFocus
           />
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button className="btn-primary">Unlock</button>
+          {error && <p className="text-sm text-red-300">{error}</p>}
+          <button className="btn-primary">Déverrouiller</button>
         </form>
       </Centered>
     );
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-10">
-      <header className="mb-6 flex items-center justify-between">
-        <span className="font-semibold">OpenCoperLock</span>
-        <span className="text-xs text-neutral-400">Shared file{view.isFolder ? 's' : ''}</span>
-      </header>
+    <div className="flex min-h-screen flex-col">
+      <div className="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
+        <header className="mb-6 flex items-center justify-between">
+          <Link href="/" className="transition hover:opacity-80">
+            <Wordmark />
+          </Link>
+          <span className="text-xs text-zinc-500">Partage{view.isFolder ? ' de dossier' : ' de fichier'}</span>
+        </header>
 
-      {view.file && (
-        <FileCard token={token} entry={view.file} allowDownload={view.allowDownload} code={submittedCode} />
-      )}
+        {view.file && (
+          <FileCard token={token} entry={view.file} allowDownload={view.allowDownload} code={submittedCode} />
+        )}
 
-      {view.entries && (
-        <div className="space-y-3">
-          <h1 className="text-lg font-semibold">Shared folder ({view.entries.length} files)</h1>
-          {view.entries.length === 0 && <p className="text-sm text-neutral-400">This folder is empty.</p>}
-          {view.entries.map((entry) => (
-            <FileCard
-              key={entry.fileId}
-              token={token}
-              entry={entry}
-              allowDownload={view.allowDownload}
-              code={submittedCode}
-              compact
-            />
-          ))}
-        </div>
-      )}
+        {view.entries && (
+          <div className="space-y-3">
+            <h1 className="text-lg font-semibold text-white">Dossier partagé ({view.entries.length} fichiers)</h1>
+            {view.entries.length === 0 && <p className="text-sm text-zinc-500">Ce dossier est vide.</p>}
+            {view.entries.map((entry) => (
+              <FileCard key={entry.fileId} token={token} entry={entry} allowDownload={view.allowDownload} code={submittedCode} compact />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <footer className="border-t border-white/[0.06] px-4 py-4 text-center text-xs text-zinc-500">
+        Propulsé par <Wordmark className="!text-xs" /> ·{' '}
+        <a href="https://forgenet.fr" target="_blank" rel="noreferrer" className="text-violet-300 hover:underline">
+          Forge Network
+        </a>
+      </footer>
     </div>
   );
 }
@@ -135,18 +146,24 @@ function FileCard({
   code?: string;
   compact?: boolean;
 }) {
+  const v = fileVisual(entry.name, entry.mimeType);
   return (
     <div className="card space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="font-medium">{entry.name}</p>
-          <p className="text-xs text-neutral-400">
-            {formatBytes(entry.sizeBytes)} · {entry.mimeType}
-          </p>
+        <div className="flex min-w-0 items-center gap-3">
+          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg ${v.bg} ${v.color}`}>
+            <v.Icon size={18} />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate font-medium text-zinc-100">{entry.name}</p>
+            <p className="text-xs text-zinc-500">
+              {v.label} · {formatBytes(entry.sizeBytes)}
+            </p>
+          </div>
         </div>
         {allowDownload && (
-          <a className="btn-primary whitespace-nowrap" href={fileUrl(token, entry.fileId, { code })}>
-            Download
+          <a className="btn-primary shrink-0 whitespace-nowrap" href={fileUrl(token, entry.fileId, { code })}>
+            <Download size={16} /> Télécharger
           </a>
         )}
       </div>
@@ -171,21 +188,21 @@ function Preview({ token, entry, code }: { token: string; entry: ShareEntry; cod
   switch (entry.kind) {
     case 'image':
       // eslint-disable-next-line @next/next/no-img-element
-      return <img src={url} alt={entry.name} className="max-h-[60vh] w-auto rounded border border-neutral-200 dark:border-neutral-800" />;
+      return <img src={url} alt={entry.name} className="max-h-[60vh] w-auto rounded-lg border border-white/10" />;
     case 'pdf':
-      return <iframe src={url} title={entry.name} className="h-[70vh] w-full rounded border border-neutral-200 dark:border-neutral-800" />;
+      return <iframe src={url} title={entry.name} className="h-[70vh] w-full rounded-lg border border-white/10 bg-white" />;
     case 'audio':
       return <audio src={url} controls className="w-full" />;
     case 'video':
-      return <video src={url} controls className="max-h-[60vh] w-full rounded" />;
+      return <video src={url} controls className="max-h-[60vh] w-full rounded-lg" />;
     case 'text':
       return text !== null ? (
-        <pre className="max-h-[60vh] overflow-auto rounded bg-neutral-50 p-3 text-xs dark:bg-neutral-900">{text}</pre>
+        <pre className="max-h-[60vh] overflow-auto rounded-lg border border-white/10 bg-ink-900 p-3 text-xs text-zinc-300">{text}</pre>
       ) : (
-        <p className="text-sm text-neutral-400">Preview unavailable.</p>
+        <p className="text-sm text-zinc-500">Aperçu indisponible.</p>
       );
     default:
-      return <p className="text-sm text-neutral-400">No preview available for this file type.</p>;
+      return <p className="text-sm text-zinc-500">Aucun aperçu disponible pour ce type de fichier.</p>;
   }
 }
 
@@ -193,8 +210,8 @@ function Centered({ title, subtitle, children }: { title: string; subtitle?: str
   return (
     <div className="grid min-h-screen place-items-center px-4">
       <div className="flex flex-col items-center gap-3 text-center">
-        <h1 className="text-xl font-semibold">{title}</h1>
-        {subtitle && <p className="max-w-sm text-sm text-neutral-500">{subtitle}</p>}
+        <h1 className="text-xl font-semibold text-white">{title}</h1>
+        {subtitle && <p className="max-w-sm text-sm text-zinc-500">{subtitle}</p>}
         {children}
       </div>
     </div>

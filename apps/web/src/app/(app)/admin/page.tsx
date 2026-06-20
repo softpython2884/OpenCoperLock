@@ -5,6 +5,7 @@ import type { PublicQuickCode, PublicUser } from '@opencoperlock/shared/client';
 import { formatBytes } from '@opencoperlock/shared/client';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { confirm, prompt } from '@/components/ui/overlays';
 
 interface Stats {
   globalUsedBytes: number;
@@ -167,10 +168,14 @@ export default function AdminPage() {
               <div className="flex gap-2">
                 <button
                   className="btn-ghost px-2 py-1"
-                  onClick={() => {
-                    const gb = window.prompt('Quota in GiB (empty = unlimited)');
+                  onClick={async () => {
+                    const gb = await prompt({
+                      title: 'Quota de stockage',
+                      label: 'Quota en Gio (vide = illimité)',
+                      defaultValue: u.quotaBytes !== null ? String(Math.round(u.quotaBytes / 1024 ** 3)) : '',
+                    });
                     if (gb === null) return;
-                    const quotaBytes = gb === '' ? null : Math.round(Number(gb) * 1024 ** 3);
+                    const quotaBytes = gb.trim() === '' ? null : Math.round(Number(gb) * 1024 ** 3);
                     void wrap(() => api.patch(`/admin/users/${u.id}`, { quotaBytes }));
                   }}
                 >
@@ -186,8 +191,8 @@ export default function AdminPage() {
                 <button
                   className="btn-danger px-2 py-1"
                   disabled={u.id === user?.id}
-                  onClick={() => {
-                    if (window.confirm(`Delete ${u.email}?`))
+                  onClick={async () => {
+                    if (await confirm({ title: `Supprimer ${u.email} ?`, danger: true, confirmLabel: 'Supprimer' }))
                       void wrap(() => api.del(`/admin/users/${u.id}`));
                   }}
                 >
@@ -204,7 +209,8 @@ export default function AdminPage() {
         <h2 className="font-semibold">Quick-Upload codes</h2>
         <p className="text-sm text-neutral-500">
           Leave the code blank for a random one, or set a memorable code you can type from any
-          device (letters, digits and dashes).
+          device (letters, digits and dashes). Files dropped with a code land in your
+          <span className="font-medium text-zinc-300"> Fast-Upload</span> folder.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <input

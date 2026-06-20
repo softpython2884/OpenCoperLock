@@ -16,18 +16,34 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
-
-# PostgreSQL refuses to run as root, and the cluster should be owned by the app's run user.
-if [[ $EUID -eq 0 ]]; then
-  echo "ERROR: run this as the unprivileged user that will own the database, not root." >&2
-  echo "       (The PM2 app user owns .postgres/; PostgreSQL will not start as root.)" >&2
-  exit 1
-fi
 PGROOT="$ROOT/.postgres"
 DATA="$PGROOT/data"
 SOCK="$PGROOT/socket"
 PORT_FILE="$PGROOT/port"
 LOG="$PGROOT/postgres.log"
+
+# PostgreSQL refuses to run as root, and the cluster must be owned by the app's run user.
+# When invoked as root — the wizard, deploy.sh and PM2 may all run as root — don't fail:
+# hand the cluster off to its unprivileged owner and re-exec. The target account comes from
+# $PG_RUN_USER (set by the wizard for the very first `init`, before .postgres/ exists) or,
+# once the cluster exists, from whoever owns .postgres/.
+if [[ $EUID -eq 0 ]]; then
+  RUN_USER="${PG_RUN_USER:-}"
+  if [[ -z "$RUN_USER" && -d "$PGROOT" ]]; then
+    RUN_USER="$(stat -c '%U' "$PGROOT" 2>/dev/null || true)"
+  fi
+  if [[ -z "$RUN_USER" || "$RUN_USER" == root || "$RUN_USER" == UNKNOWN ]]; then
+    echo "ERROR: refusing to run PostgreSQL as root, and no unprivileged owner is known." >&2
+    echo "       Set PG_RUN_USER=<user> (the account that will own .postgres/), or create" >&2
+    echo "       .postgres/ owned by that user first. The setup wizard does this for you." >&2
+    exit 1
+  fi
+  command -v runuser >/dev/null 2>&1 || { echo "ERROR: 'runuser' not found (install util-linux)." >&2; exit 1; }
+  # Re-exec the SAME command as the unprivileged user, carrying through the env `init` reads.
+  exec runuser -u "$RUN_USER" -- env \
+    DB_NAME="${DB_NAME:-}" DB_USER="${DB_USER:-}" DB_PASS="${DB_PASS:-}" \
+    bash "$0" "$@"
+fi
 
 # Locate the PostgreSQL server binaries. They are on PATH on most systems; on Debian/Ubuntu
 # they live under /usr/lib/postgresql/<version>/bin.

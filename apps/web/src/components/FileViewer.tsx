@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Loader2, X } from 'lucide-react';
 import { fileVisual, previewKind } from '@/lib/fileType';
+import { PdfCanvas } from '@/components/PdfCanvas';
 import { formatBytes } from '@opencoperlock/shared/client';
 
 export interface ViewerSource {
@@ -28,6 +29,7 @@ export interface ViewerSource {
 export function FileViewer({ source, onClose }: { source: ViewerSource; onClose: () => void }) {
   const kind = previewKind(source.name, source.mime);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [dataBlob, setDataBlob] = useState<Blob | null>(null);
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(kind !== 'none');
@@ -46,15 +48,17 @@ export function FileViewer({ source, onClose }: { source: ViewerSource; onClose:
       try {
         const blob = source.blob ?? (await fetchBlob(source.url!));
         if (cancelled) return;
+        setDataBlob(blob);
         if (kind === 'text') {
           // Cap inline text rendering to keep the DOM light.
           setText(await blob.slice(0, 2_000_000).text());
-        } else {
+        } else if (kind === 'image' || kind === 'video' || kind === 'audio') {
           url = URL.createObjectURL(blob);
           setObjectUrl(url);
         }
+        // PDFs are rendered from the Blob by <PdfCanvas> (no object URL / iframe).
       } catch {
-        if (!cancelled) setError("Aperçu indisponible. Vous pouvez télécharger le fichier.");
+        if (!cancelled) setError('Aperçu indisponible. Vous pouvez télécharger le fichier.');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -110,8 +114,13 @@ export function FileViewer({ source, onClose }: { source: ViewerSource; onClose:
         ) : kind === 'image' && objectUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={objectUrl} alt={source.name} className="max-h-full max-w-full rounded-lg object-contain" />
-        ) : kind === 'pdf' && objectUrl ? (
-          <iframe src={objectUrl} title={source.name} className="h-full w-full max-w-5xl rounded-lg bg-white" />
+        ) : kind === 'pdf' && dataBlob ? (
+          <div className="h-full w-full self-stretch">
+            <PdfCanvas
+              blob={dataBlob}
+              onFail={() => setError('Aperçu PDF indisponible. Vous pouvez télécharger le fichier.')}
+            />
+          </div>
         ) : kind === 'video' && objectUrl ? (
           <video src={objectUrl} controls autoPlay className="max-h-full max-w-full rounded-lg" />
         ) : kind === 'audio' && objectUrl ? (

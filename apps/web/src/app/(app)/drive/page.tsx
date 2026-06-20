@@ -42,6 +42,7 @@ import { useAuth } from '@/lib/auth';
 import { decryptBlob, decryptName, deriveVaultKey, encryptFile } from '@/lib/zk';
 import { fileVisual } from '@/lib/fileType';
 import { FileViewer, type ViewerSource } from '@/components/FileViewer';
+import { Menu } from '@/components/ui/Menu';
 import { confirm, prompt, choose, toast } from '@/components/ui/overlays';
 
 interface ZkFile {
@@ -572,9 +573,13 @@ export default function EspacesPage() {
                     <span className="truncate font-medium text-zinc-100">{f.name}</span>
                   </button>
                   <RowActions>
-                    <IconBtn title="Renommer" icon={Pencil} onClick={() => renameFolder(f)} />
-                    {!isZk && <IconBtn title="Partager" icon={Share2} onClick={() => share('folder', f.id)} />}
-                    <IconBtn title="Supprimer" danger icon={Trash2} onClick={() => deleteFolder(f.id)} />
+                    <Menu
+                      items={[
+                        { label: 'Renommer', icon: Pencil, onClick: () => renameFolder(f) },
+                        ...(!isZk ? [{ label: 'Partager', icon: Share2, onClick: () => share('folder', f.id) }] : []),
+                        { label: 'Supprimer', icon: Trash2, danger: true, onClick: () => deleteFolder(f.id) },
+                      ]}
+                    />
                   </RowActions>
                 </div>
               ))}
@@ -595,11 +600,15 @@ export default function EspacesPage() {
                       <a className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100" title="Télécharger" href={api.url(`/files/${f.id}/download`)}>
                         <Download size={16} />
                       </a>
-                      <IconBtn title="Renommer" icon={Pencil} onClick={() => renameFile(f)} />
-                      <IconBtn title="Déplacer" icon={FolderInput} onClick={() => move('file', f.id)} />
-                      <IconBtn title="Partager" icon={Share2} onClick={() => share('file', f.id)} />
-                      <IconBtn title="Versions" icon={History} onClick={() => versions(f)} />
-                      <IconBtn title="Supprimer" danger icon={Trash2} onClick={() => deleteFile(f.id)} />
+                      <Menu
+                        items={[
+                          { label: 'Renommer', icon: Pencil, onClick: () => renameFile(f) },
+                          { label: 'Déplacer', icon: FolderInput, onClick: () => move('file', f.id) },
+                          { label: 'Partager', icon: Share2, onClick: () => share('file', f.id) },
+                          { label: 'Versions', icon: History, onClick: () => versions(f) },
+                          { label: 'Supprimer', icon: Trash2, danger: true, onClick: () => deleteFile(f.id) },
+                        ]}
+                      />
                     </RowActions>
                   </div>
                 );
@@ -617,7 +626,7 @@ export default function EspacesPage() {
                   <RowActions>
                     <IconBtn title="Ouvrir" icon={Eye} onClick={() => openZk(f)} />
                     <IconBtn title="Télécharger" icon={Download} onClick={() => downloadZk(f)} />
-                    <IconBtn title="Supprimer" danger icon={Trash2} onClick={() => deleteFile(f.id)} />
+                    <Menu items={[{ label: 'Supprimer', icon: Trash2, danger: true, onClick: () => deleteFile(f.id) }]} />
                   </RowActions>
                 </div>
               ))}

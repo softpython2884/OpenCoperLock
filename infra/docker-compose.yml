@@ -48,6 +48,10 @@ services:
     environment:
       NODE_ENV: production
       API_PORT: 4000
+      API_HOST: 0.0.0.0
+      # No proxy in front of the API in the default compose topology. If you front it with
+      # one, set TRUST_PROXY (e.g. to the proxy network/subnet) so client IPs are accurate.
+      TRUST_PROXY: ${TRUST_PROXY:-false}
       APP_URL: ${APP_URL:-http://localhost:3000}
       DATABASE_URL: postgresql://${POSTGRES_USER:-opencoperlock}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-opencoperlock}
       MASTER_KEY: ${MASTER_KEY:?set MASTER_KEY in .env}

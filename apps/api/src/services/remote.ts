@@ -3,27 +3,55 @@
  * 4G/5G never has to relay the bytes. Security-critical: this is an SSRF sink, so we
  *   - allow only http/https,
  *   - manually follow redirects, re-validating every hop,
- *   - DNS-resolve each host and reject any private/reserved address,
+ *   - DNS-resolve each host, reject any private/reserved address, and then PIN the
+ *     connection to the exact validated IP (closing the DNS-rebinding window between
+ *     our lookup and the connect),
  *   - cap the response size.
- *
- * (DNS rebinding between our lookup and fetch remains a theoretical risk; documented
- * in THREAT_MODEL.md. Deployments needing stronger guarantees can run behind an egress
- * proxy that enforces the same allowlist.)
  */
 import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import { Readable } from 'node:stream';
+import { Agent } from 'undici';
 import { assertAllowedUrl, isPrivateAddress, SsrfError } from '@opencoperlock/shared';
 
 const MAX_REDIRECTS = 5;
 
-async function assertHostResolvesPublic(hostname: string): Promise<void> {
-  // Literal IPs are already checked by assertAllowedUrl; this covers DNS names.
+/**
+ * Resolve a host, ensure every address is public, and return one validated address to
+ * connect to. Literal IPs are returned as-is (already checked by assertAllowedUrl).
+ */
+async function resolvePublicAddress(hostname: string): Promise<string> {
+  if (isIP(hostname)) return hostname;
   const records = await lookup(hostname, { all: true });
+  if (records.length === 0) throw new SsrfError('Host does not resolve');
   for (const record of records) {
     if (isPrivateAddress(record.address)) {
       throw new SsrfError('Host resolves to a private or reserved address');
     }
   }
+  return records[0]!.address;
+}
+
+/**
+ * An undici dispatcher whose DNS lookup is pinned to a single, pre-validated IP. The TLS
+ * SNI / Host header still use the original hostname, so certificate validation is intact;
+ * only the TCP target is fixed — a rebinding response after our check cannot redirect us
+ * to an internal address.
+ */
+function pinnedDispatcher(ip: string): Agent {
+  const family = isIP(ip);
+  return new Agent({
+    connect: {
+      // undici calls this dns.lookup-style; honour both the `all` and single-result forms.
+      lookup(_hostname, options, callback) {
+        if (options && (options as { all?: boolean }).all) {
+          callback(null, [{ address: ip, family }] as never);
+        } else {
+          (callback as (err: Error | null, address: string, family: number) => void)(null, ip, family);
+        }
+      },
+    },
+  });
 }
 
 export interface RemoteSource {
@@ -65,12 +93,14 @@ export async function openRemoteSource(
   let current = assertAllowedUrl(rawUrl);
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
-    await assertHostResolvesPublic(current.hostname);
+    const pinnedIp = await resolvePublicAddress(current.hostname);
+    // `dispatcher` is an undici extension to global fetch; not in the DOM RequestInit type.
     const res = await fetch(current, {
       redirect: 'manual',
       headers: { 'user-agent': 'OpenCoperLock-RemoteUpload/0.1' },
       signal,
-    });
+      dispatcher: pinnedDispatcher(pinnedIp),
+    } as RequestInit & { dispatcher: Agent });
 
     // Manual redirect handling so we re-validate each Location.
     if (res.status >= 300 && res.status < 400) {

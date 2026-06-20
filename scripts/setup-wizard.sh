@@ -301,7 +301,16 @@ umask 077
   printf 'WEB_PORT=%s\n' "$WEB_PORT"
   printf 'API_PORT=%s\n' "$API_PORT"
   printf 'NEXT_PUBLIC_API_URL=%s\n' "$NEXT_PUBLIC_API_URL"
-  printf 'WEB_HOST=%s\n\n' "$WEB_HOST_VAL"
+  printf 'WEB_HOST=%s\n' "$WEB_HOST_VAL"
+  # Behind nginx: bind the API to localhost and trust one proxy hop so req.ip is the real
+  # client (used by rate limiting, session IP tracking and audit logs). Otherwise no trust.
+  if [[ $SETUP_NGINX == true ]]; then
+    printf 'API_HOST=127.0.0.1\n'
+    printf 'TRUST_PROXY=1\n\n'
+  else
+    printf 'API_HOST=0.0.0.0\n'
+    printf 'TRUST_PROXY=false\n\n'
+  fi
   printf 'DATABASE_URL=%s\n\n' "$DATABASE_URL"
   emit_secret MASTER_KEY "$MASTER_KEY"
   emit_secret SESSION_SECRET "$SESSION_SECRET"

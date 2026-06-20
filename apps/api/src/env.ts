@@ -9,7 +9,19 @@ import { loadMasterKey } from '@opencoperlock/shared';
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   API_PORT: z.coerce.number().int().positive().default(4000),
+  // Address the API binds to. Set to 127.0.0.1 when an nginx reverse proxy is in front,
+  // so the API can't be reached directly (which would allow X-Forwarded-For spoofing).
+  API_HOST: z.string().default('0.0.0.0'),
   APP_URL: z.string().url().default('http://localhost:3000'),
+
+  // Reverse-proxy trust. Controls how req.ip is derived from X-Forwarded-For, which feeds
+  // rate limiting, session IP tracking and audit logs. Values:
+  //   "false" (default) — no proxy; use the socket address.
+  //   "true"            — trust the whole X-Forwarded-For chain (only if the API is not
+  //                       directly reachable).
+  //   a number          — trust that many proxy hops (e.g. "1" for a single nginx).
+  //   IPs/subnets       — comma-separated trusted proxy addresses (e.g. "127.0.0.1,::1").
+  TRUST_PROXY: z.string().default('false'),
 
   DATABASE_URL: z.string().min(1),
 

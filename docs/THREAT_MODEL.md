@@ -42,9 +42,10 @@ software that overpromises is worse than software that is clear about its bounda
 
 - **Operator access to SERVER files.** SERVER mode is encryption *at rest*, not against the
   operator. Use a ZK vault for content the operator must not read.
-- **DNS rebinding** between the SSRF guard's DNS lookup and the actual fetch is a known
-  theoretical gap. Deployments needing strong guarantees should place the API behind an
-  egress proxy enforcing the same allowlist.
+- **DNS rebinding** for Remote-Upload is mitigated: after resolving and validating that a
+  host's addresses are all public, the fetcher pins the connection to the validated IP (via
+  an undici dispatcher with a fixed lookup), so a rebinding response cannot redirect the
+  connect to an internal address. TLS SNI / certificate validation still use the hostname.
 - **Streaming AEAD ordering.** AES-GCM verifies the auth tag only after the final block, so
   a tampered/truncated blob surfaces as a stream error at the end of a download rather than
   before the first byte. Storage integrity is the first line of defence.
@@ -60,6 +61,9 @@ software that overpromises is worse than software that is clear about its bounda
 
 - Set a unique, secret `MASTER_KEY` and `SESSION_SECRET`; store them outside the repo/DB.
 - Terminate TLS at a reverse proxy and set `APP_URL` to the `https://` origin.
+- Behind nginx, set `TRUST_PROXY=1` (or the proxy's IP/subnet) so client IPs are accurate,
+  and `API_HOST=127.0.0.1` so the API is only reachable through the proxy (preventing
+  `X-Forwarded-For` spoofing). The setup wizard does both automatically.
 - Keep ClamAV enabled and its signatures updated.
 - Back up Postgres **and** the storage volume together (they are useless apart).
 - Restrict who can reach the Postgres and clamav ports (they are internal to the compose network by default).

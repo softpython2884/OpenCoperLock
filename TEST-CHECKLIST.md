@@ -113,4 +113,22 @@ Versioning (text-like files: txt, md, csv, json, log, yml, …):
       account and all files, then signs you out. The only administrator cannot delete
       themselves.
 
+## Reverse-proxy IP handling & SSRF pinning (lot 5)
+
+Most operators run behind nginx, so client-IP handling and the Remote-Upload SSRF guard
+were hardened.
+
+- [ ] **Behind nginx**: with `TRUST_PROXY=1` (and `API_HOST=127.0.0.1`), the IP shown for a
+      session (Account → Active sessions) and in the admin audit log is the **real client
+      IP**, not the nginx address. The setup wizard sets these automatically when it
+      configures nginx.
+- [ ] **No proxy**: with `TRUST_PROXY=false` (default), the socket address is used. The app
+      must not trust `X-Forwarded-For` from clients in this mode.
+- [ ] **SSRF rebinding**: a Remote-Upload of a host that resolves to a private address
+      (e.g. a domain pointing at 127.0.0.1) is rejected; a normal public URL still
+      downloads. (Verified automatically: the fetcher pins the connection to the validated
+      IP.)
+- [ ] **Direct API access blocked**: when `API_HOST=127.0.0.1`, the API port is not
+      reachable from outside the host — only nginx can reach it.
+
 <!-- New features are appended below as they are built. -->

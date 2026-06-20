@@ -6,6 +6,7 @@ import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import type { AppContext } from './context.js';
 import { getHealth } from './services/health.js';
+import { parseTrustProxy } from './lib/trust-proxy.js';
 import authPlugin from './plugins/auth.js';
 import { authRoutes } from './routes/auth.js';
 import { folderRoutes } from './routes/folders.js';
@@ -33,8 +34,9 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
           ? { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss', ignore: 'pid,hostname' } }
           : undefined,
     },
-    // We sit behind a reverse proxy in production; trust X-Forwarded-* for client IPs.
-    trustProxy: ctx.env.NODE_ENV === 'production',
+    // Derive the client IP from X-Forwarded-* according to the TRUST_PROXY policy. Behind
+    // nginx this must be set (e.g. TRUST_PROXY=1) or req.ip would be the proxy's address.
+    trustProxy: parseTrustProxy(ctx.env.TRUST_PROXY),
     bodyLimit: 1_048_576, // 1 MiB for JSON bodies; file uploads use multipart streaming.
   });
 

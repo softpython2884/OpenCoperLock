@@ -7,15 +7,20 @@
  *                server never sees. The passphrase is cached in sessionStorage for the tab
  *                so it is asked once per session, then used to derive the vault key.
  *
- * Inside a space you can create folders, upload (drag & drop + progress), open files in an
- * in-app viewer, download, delete, and (for normal spaces) rename / move / share / browse
- * versions. Grid or list view. All prompts/confirmations use the in-app dialog system.
+ * Inside a space you can create folders & files, upload (full-window drag & drop + progress),
+ * open files in an in-app viewer/editor, download, delete, rename / move / share / browse
+ * versions, and work with the keyboard: multi-selection, a Ctrl/⌘+K command palette, sortable
+ * columns, and copy / cut / paste / duplicate (normal spaces). All prompts use the in-app dialogs.
+ *
+ * NOTE: Zero-Knowledge vault files have no server-side move/rename/copy (encrypted in place), so
+ * clipboard and bulk-move are offered for normal spaces only; delete & download work everywhere.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Folder,
   FolderLock,
   FolderPlus,
+  FilePlus,
   Upload,
   LayoutGrid,
   List as ListIcon,
@@ -27,13 +32,21 @@ import {
   History,
   Plus,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Home,
   Lock,
   ShieldCheck,
   KeyRound,
   Eye,
   Copy,
+  Scissors,
+  ClipboardPaste,
+  Files,
+  Keyboard,
+  ArrowDownUp,
   Check,
+  X,
 } from 'lucide-react';
 import type { PublicFile, PublicFolder } from '@opencoperlock/shared/client';
 import { formatBytes } from '@opencoperlock/shared/client';
@@ -53,6 +66,9 @@ import { fileVisual } from '@/lib/fileType';
 import { FileViewer, type ViewerSource } from '@/components/FileViewer';
 import { Menu } from '@/components/ui/Menu';
 import { confirm, prompt, choose, toast } from '@/components/ui/overlays';
+import { DropOverlay } from '@/components/drive/DropOverlay';
+import { CommandPalette, type PaletteItem } from '@/components/drive/CommandPalette';
+import { ShortcutsHelp } from '@/components/drive/ShortcutsHelp';
 
 interface ZkFile {
   id: string;
@@ -60,7 +76,32 @@ interface ZkFile {
   iv: string;
   wrappedKey: string;
   sizeBytes: number;
+  createdAt: string;
   plainName?: string;
+}
+
+type SortKey = 'name' | 'size' | 'date';
+interface Sort {
+  key: SortKey;
+  dir: 'asc' | 'desc';
+}
+
+// A unified, display-ordered item so selection/keyboard logic works across folders & files.
+type Entry =
+  | { key: string; kind: 'folder'; name: string; size: number; date: number; folder: PublicFolder }
+  | { key: string; kind: 'file'; name: string; size: number; date: number; file: PublicFile }
+  | { key: string; kind: 'zk'; name: string; size: number; date: number; zk: ZkFile };
+
+interface ClipItem {
+  kind: 'folder' | 'file';
+  id: string;
+  name: string;
+  mimeType?: string;
+  sourceFolderId: string | null;
+}
+interface Clipboard {
+  op: 'copy' | 'cut';
+  items: ClipItem[];
 }
 
 function passKey(spaceId: string) {
@@ -77,6 +118,7 @@ export default function EspacesPage() {
   const [files, setFiles] = useState<PublicFile[]>([]);
   const [zkFiles, setZkFiles] = useState<ZkFile[]>([]);
   const [view, setView] = useState<'grid' | 'list'>('list');
+  const [sort, setSort] = useState<Sort>({ key: 'name', dir: 'asc' });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
@@ -85,10 +127,46 @@ export default function EspacesPage() {
   const [shareLink, setShareLink] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  // selection / clipboard / overlays
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [anchorKey, setAnchorKey] = useState<string | null>(null);
+  const [clipboard, setClipboard] = useState<Clipboard | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+
   // passphrase prompt
   const [askPass, setAskPass] = useState<PublicFolder | null>(null);
   const [passInput, setPassInput] = useState('');
   const [passError, setPassError] = useState<string | null>(null);
+
+  // Restore persisted view/sort once on mount.
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('ocl_view');
+      if (v === 'grid' || v === 'list') setView(v);
+      const s = localStorage.getItem('ocl_sort');
+      if (s) {
+        const parsed = JSON.parse(s) as Sort;
+        if (parsed?.key && parsed?.dir) setSort(parsed);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem('ocl_view', view);
+    } catch {
+      /* ignore */
+    }
+  }, [view]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('ocl_sort', JSON.stringify(sort));
+    } catch {
+      /* ignore */
+    }
+  }, [sort]);
 
   const spaces = useMemo(() => allFolders.filter((f) => f.parentId === null), [allFolders]);
   const activeSpace = useMemo(
@@ -96,10 +174,47 @@ export default function EspacesPage() {
     [allFolders, activeSpaceId],
   );
   const isZk = activeSpace?.isZeroKnowledge ?? false;
+  const needPass = isZk && !vaultKey;
   const childFolders = useMemo(
     () => allFolders.filter((f) => f.parentId === currentFolderId),
     [allFolders, currentFolderId],
   );
+
+  // Folders first, then files/zk; each group sorted by the active column.
+  const entries = useMemo<Entry[]>(() => {
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    const cmp = (a: Entry, b: Entry) => {
+      if (sort.key === 'name') return a.name.localeCompare(b.name) * dir;
+      if (sort.key === 'size') return (a.size - b.size) * dir;
+      return (a.date - b.date) * dir;
+    };
+    const folders: Entry[] = childFolders.map((f) => ({
+      key: `folder:${f.id}`,
+      kind: 'folder',
+      name: f.name,
+      size: 0,
+      date: Date.parse(f.createdAt),
+      folder: f,
+    }));
+    const fileEntries: Entry[] = files.map((f) => ({
+      key: `file:${f.id}`,
+      kind: 'file',
+      name: f.name,
+      size: f.sizeBytes,
+      date: Date.parse(f.createdAt),
+      file: f,
+    }));
+    const zkEntries: Entry[] = zkFiles.map((f) => ({
+      key: `zk:${f.id}`,
+      kind: 'zk',
+      name: f.plainName ?? '🔒',
+      size: f.sizeBytes,
+      date: Date.parse(f.createdAt),
+      zk: f,
+    }));
+    folders.sort(cmp);
+    return [...folders, ...[...fileEntries, ...zkEntries].sort(cmp)];
+  }, [childFolders, files, zkFiles, sort]);
 
   const breadcrumb = useMemo(() => {
     const path: PublicFolder[] = [];
@@ -150,6 +265,12 @@ export default function EspacesPage() {
     void loadItems(currentFolderId, isZk, vaultKey).catch((e) => setError(String(e)));
   }, [activeSpaceId, currentFolderId, isZk, vaultKey, loadItems]);
 
+  // Clear selection whenever the visible folder changes.
+  useEffect(() => {
+    setSelected(new Set());
+    setAnchorKey(null);
+  }, [currentFolderId, activeSpaceId]);
+
   async function enterSpace(space: PublicFolder) {
     setError(null);
     setActiveSpaceId(space.id);
@@ -159,7 +280,6 @@ export default function EspacesPage() {
       const cached = sessionStorage.getItem(passKey(space.id));
       if (cached) {
         const key = await deriveVaultKey(cached, space.zkSalt);
-        // Trust the cache only if it still matches the vault's verifier (legacy vaults have none).
         if (!space.zkVerifier || (await checkVerifier(key, space.zkVerifier))) {
           setVaultKey(key);
           return;
@@ -175,7 +295,6 @@ export default function EspacesPage() {
   async function submitPassphrase() {
     if (!askPass || !passInput) return;
     const key = await deriveVaultKey(passInput, askPass.zkSalt);
-    // Reject a wrong passphrase up-front instead of silently caching a bad key.
     if (askPass.zkVerifier && !(await checkVerifier(key, askPass.zkVerifier))) {
       setPassError(t('drive.passphraseWrong'));
       return;
@@ -195,6 +314,36 @@ export default function EspacesPage() {
     setZkFiles([]);
   }
 
+  // Navigate to any folder anywhere (used by the command palette).
+  function jumpToFolder(f: PublicFolder) {
+    if (f.parentId === null) {
+      void enterSpace(f);
+      return;
+    }
+    const byId = new Map(allFolders.map((x) => [x.id, x]));
+    let space: PublicFolder = f;
+    while (space.parentId) {
+      const parent = byId.get(space.parentId);
+      if (!parent) break;
+      space = parent;
+    }
+    if (space.id !== activeSpaceId) {
+      void enterSpace(space).then(() => setCurrentFolderId(f.id));
+    } else {
+      setCurrentFolderId(f.id);
+    }
+  }
+
+  function goParent() {
+    if (!currentFolderId || !activeSpace) return;
+    if (currentFolderId === activeSpace.id) {
+      leaveSpace();
+      return;
+    }
+    const cur = allFolders.find((f) => f.id === currentFolderId);
+    setCurrentFolderId(cur?.parentId ?? activeSpace.id);
+  }
+
   async function createSpace() {
     const name = await prompt({ title: t('drive.newSpaceTitle'), label: t('drive.spaceNameLabel'), placeholder: t('drive.spaceNamePlaceholder') });
     if (!name) return;
@@ -209,8 +358,6 @@ export default function EspacesPage() {
     if (!kind) return;
 
     if (kind === 'secured') {
-      // Set the vault passphrase now, with confirmation, and store a verifier so a wrong
-      // passphrase is caught on unlock. The passphrase never leaves the browser.
       const pass = await prompt({
         title: t('drive.vaultPassTitle'),
         message: t('drive.vaultPassMsg'),
@@ -263,49 +410,116 @@ export default function EspacesPage() {
     }
   }
 
-  async function onUpload(list: FileList | null) {
-    if (!list || list.length === 0 || !currentFolderId) return;
-    const arr = Array.from(list);
-    setError(null);
+  // Create an empty text file and (for normal spaces) open it straight in the editor.
+  async function createFileDoc() {
+    if (!currentFolderId || needPass) return;
+    const name = await prompt({ title: t('drive.newFileTitle'), label: t('drive.newFileLabel'), defaultValue: t('drive.newFileDefault') });
+    if (!name) return;
     try {
       if (isZk) {
         if (!vaultKey) return;
-        for (let i = 0; i < arr.length; i += 1) {
-          setBusy(t('drive.encrypting', { i: i + 1, n: arr.length }));
-          const enc = await encryptFile(vaultKey, arr[i]!);
-          const form = new FormData();
-          form.append(
-            'meta',
-            JSON.stringify({
-              folderId: currentFolderId,
-              encryptedName: enc.encryptedName,
-              iv: enc.iv,
-              wrappedKey: enc.wrappedKey,
-              encMode: 'ZK',
-            }),
-          );
-          form.append('file', enc.blob, 'blob');
-          await api.upload('/zk/files', form);
-        }
+        const enc = await encryptFile(vaultKey, new File([''], name, { type: 'text/plain' }));
+        const form = new FormData();
+        form.append('meta', JSON.stringify({ folderId: currentFolderId, encryptedName: enc.encryptedName, iv: enc.iv, wrappedKey: enc.wrappedKey, encMode: 'ZK' }));
+        form.append('file', enc.blob, 'blob');
+        await api.upload('/zk/files', form);
+        await reloadCurrent();
       } else {
-        for (let i = 0; i < arr.length; i += 1) {
-          setBusy(t('drive.uploading', { i: i + 1, n: arr.length }));
-          setProgress(0);
-          const form = new FormData();
-          form.append('file', arr[i]!);
-          await api.uploadWithProgress(`/files?folderId=${currentFolderId}`, form, setProgress);
-        }
+        const form = new FormData();
+        form.append('file', new File([''], name, { type: 'text/plain' }));
+        const res = await api.upload<{ file?: PublicFile }>(`/files?folderId=${currentFolderId}`, form);
+        await reloadCurrent();
+        if (res?.file) openFile(res.file);
       }
-      await Promise.all([loadItems(currentFolderId, isZk, vaultKey), refresh()]);
-      toast(arr.length > 1 ? t('drive.filesImportedMany', { n: arr.length }) : t('drive.filesImportedOne', { n: arr.length }), 'success');
+      toast(t('drive.fileCreated'), 'success');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t('drive.uploadFailed'));
-    } finally {
-      setBusy(null);
-      setProgress(null);
-      if (fileInput.current) fileInput.current.value = '';
+      setError(err instanceof ApiError ? err.message : t('drive.createFileFailed'));
     }
   }
+
+  const onUpload = useCallback(
+    async (list: FileList | null) => {
+      if (!list || list.length === 0 || !currentFolderId) return;
+      const arr = Array.from(list);
+      setError(null);
+      try {
+        if (isZk) {
+          if (!vaultKey) return;
+          for (let i = 0; i < arr.length; i += 1) {
+            setBusy(t('drive.encrypting', { i: i + 1, n: arr.length }));
+            const enc = await encryptFile(vaultKey, arr[i]!);
+            const form = new FormData();
+            form.append(
+              'meta',
+              JSON.stringify({
+                folderId: currentFolderId,
+                encryptedName: enc.encryptedName,
+                iv: enc.iv,
+                wrappedKey: enc.wrappedKey,
+                encMode: 'ZK',
+              }),
+            );
+            form.append('file', enc.blob, 'blob');
+            await api.upload('/zk/files', form);
+          }
+        } else {
+          for (let i = 0; i < arr.length; i += 1) {
+            setBusy(t('drive.uploading', { i: i + 1, n: arr.length }));
+            setProgress(0);
+            const form = new FormData();
+            form.append('file', arr[i]!);
+            await api.uploadWithProgress(`/files?folderId=${currentFolderId}`, form, setProgress);
+          }
+        }
+        await Promise.all([loadItems(currentFolderId, isZk, vaultKey), refresh()]);
+        toast(arr.length > 1 ? t('drive.filesImportedMany', { n: arr.length }) : t('drive.filesImportedOne', { n: arr.length }), 'success');
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : t('drive.uploadFailed'));
+      } finally {
+        setBusy(null);
+        setProgress(null);
+        if (fileInput.current) fileInput.current.value = '';
+      }
+    },
+    [currentFolderId, isZk, vaultKey, loadItems, refresh, t],
+  );
+
+  // Full-window drag & drop: a drop anywhere over the page uploads into the open folder.
+  const dragDepth = useRef(0);
+  useEffect(() => {
+    if (!activeSpaceId || needPass) return;
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files');
+    const onEnter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      dragDepth.current += 1;
+      setDragging(true);
+    };
+    const onOver = (e: DragEvent) => {
+      if (hasFiles(e)) e.preventDefault();
+    };
+    const onLeave = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      dragDepth.current = Math.max(0, dragDepth.current - 1);
+      if (dragDepth.current === 0) setDragging(false);
+    };
+    const onDrop = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth.current = 0;
+      setDragging(false);
+      void onUpload(e.dataTransfer?.files ?? null);
+    };
+    window.addEventListener('dragenter', onEnter);
+    window.addEventListener('dragover', onOver);
+    window.addEventListener('dragleave', onLeave);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragenter', onEnter);
+      window.removeEventListener('dragover', onOver);
+      window.removeEventListener('dragleave', onLeave);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, [activeSpaceId, needPass, onUpload]);
 
   function openFile(f: PublicFile) {
     setViewing({
@@ -313,7 +527,6 @@ export default function EspacesPage() {
       mime: f.mimeType,
       sizeBytes: f.sizeBytes,
       url: api.url(`/files/${f.id}/download`),
-      // Editing a text file re-uploads it under the same name → kept as a new version.
       onSave: async (text: string) => {
         const form = new FormData();
         form.append('file', new File([text], f.name, { type: f.mimeType || 'text/plain' }));
@@ -338,8 +551,12 @@ export default function EspacesPage() {
     URL.revokeObjectURL(url);
   }
 
+  function zkName(f: ZkFile) {
+    return f.plainName && !f.plainName.startsWith('🔒') ? f.plainName : t('drive.lockedFileName');
+  }
+
   async function openZk(f: ZkFile) {
-    const name = f.plainName && !f.plainName.startsWith('🔒') ? f.plainName : t('drive.lockedFileName');
+    const name = zkName(f);
     try {
       const blob = await decryptZkBlob(f);
       if (!blob) return;
@@ -349,7 +566,6 @@ export default function EspacesPage() {
         sizeBytes: f.sizeBytes,
         blob,
         onDownload: () => saveBlob(blob, name),
-        // Editing re-encrypts the new contents (same name) and replaces the vault file in place.
         onSave: async (text: string) => {
           if (!vaultKey) return;
           const enc = await encryptFile(vaultKey, new File([text], name, { type: 'text/plain' }));
@@ -366,28 +582,83 @@ export default function EspacesPage() {
   }
 
   async function downloadZk(f: ZkFile) {
-    const name = f.plainName && !f.plainName.startsWith('🔒') ? f.plainName : t('drive.lockedFileName');
     const blob = await decryptZkBlob(f);
-    if (blob) saveBlob(blob, name);
+    if (blob) saveBlob(blob, zkName(f));
+  }
+
+  function openEntry(e: Entry) {
+    if (e.kind === 'folder') setCurrentFolderId(e.folder.id);
+    else if (e.kind === 'file') openFile(e.file);
+    else void openZk(e.zk);
   }
 
   async function reloadCurrent() {
     if (currentFolderId) await Promise.all([loadItems(currentFolderId, isZk, vaultKey), refresh()]);
   }
 
-  async function deleteFile(id: string) {
-    if (!(await confirm({ title: t('drive.deleteFileTitle'), confirmLabel: t('drive.deleteToTrash') }))) return;
-    await api.del(isZk ? `/zk/files/${id}` : `/files/${id}`);
-    await reloadCurrent();
-    toast(t('drive.movedToTrash'), 'success');
+  // ── Selection ───────────────────────────────────────────────────────────────
+  function onEntryClick(e: React.MouseEvent, entry: Entry) {
+    if (e.metaKey || e.ctrlKey) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(entry.key)) next.delete(entry.key);
+        else next.add(entry.key);
+        return next;
+      });
+      setAnchorKey(entry.key);
+    } else if (e.shiftKey) {
+      const keys = entries.map((x) => x.key);
+      const a = anchorKey ? keys.indexOf(anchorKey) : 0;
+      const b = keys.indexOf(entry.key);
+      if (a < 0 || b < 0) {
+        setSelected(new Set([entry.key]));
+      } else {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        setSelected(new Set(keys.slice(lo, hi + 1)));
+      }
+    } else {
+      setSelected(new Set([entry.key]));
+      setAnchorKey(entry.key);
+    }
   }
+  function onNameClick(e: React.MouseEvent, entry: Entry) {
+    if (e.metaKey || e.ctrlKey || e.shiftKey) return; // let the row handle selection
+    e.stopPropagation();
+    openEntry(entry);
+  }
+  function selectAll() {
+    setSelected(new Set(entries.map((e) => e.key)));
+  }
+  function moveFocus(delta: number) {
+    if (entries.length === 0) return;
+    const keys = entries.map((e) => e.key);
+    let i = anchorKey ? keys.indexOf(anchorKey) : -1;
+    i = Math.max(0, Math.min(keys.length - 1, i + delta));
+    const k = keys[i]!;
+    setSelected(new Set([k]));
+    setAnchorKey(k);
+  }
+  const entriesByKeys = useCallback(
+    (keys: string[]) => {
+      const set = new Set(keys);
+      return entries.filter((e) => set.has(e.key));
+    },
+    [entries],
+  );
+
+  // ── Per-item operations ──────────────────────────────────────────────────────
   async function deleteFolder(id: string) {
     if (!(await confirm({ title: t('drive.deleteFolderTitle'), message: t('drive.deleteFolderMsg'), confirmLabel: t('drive.deleteToTrash') }))) return;
     await api.del(`/folders/${id}`);
     await Promise.all([loadFolders(), refresh()]);
     toast(t('drive.movedToTrash'), 'success');
   }
-  // Deleting a whole space is high-stakes, so we require the user to type its exact name.
+  async function deleteFile(id: string) {
+    if (!(await confirm({ title: t('drive.deleteFileTitle'), confirmLabel: t('drive.deleteToTrash') }))) return;
+    await api.del(isZk ? `/zk/files/${id}` : `/files/${id}`);
+    await reloadCurrent();
+    toast(t('drive.movedToTrash'), 'success');
+  }
   async function deleteSpace(space: PublicFolder) {
     const typed = await prompt({
       title: t('drive.deleteSpaceTitle'),
@@ -420,6 +691,12 @@ export default function EspacesPage() {
     if (!name || name === f.name) return;
     await api.patch(`/folders/${f.id}`, { name });
     await loadFolders();
+  }
+  function renameByKey(key: string) {
+    const entry = entries.find((e) => e.key === key);
+    if (!entry) return;
+    if (entry.kind === 'folder') void renameFolder(entry.folder);
+    else if (entry.kind === 'file') void renameFile(entry.file);
   }
   async function move(kind: 'file' | 'folder', id: string) {
     const targets = [
@@ -476,9 +753,7 @@ export default function EspacesPage() {
   }
   async function versions(f: PublicFile) {
     try {
-      const res = await api.get<{ versions: { id: string; sizeBytes: number; createdAt: string }[] }>(
-        `/files/${f.id}/versions`,
-      );
+      const res = await api.get<{ versions: { id: string; sizeBytes: number; createdAt: string }[] }>(`/files/${f.id}/versions`);
       if (res.versions.length === 0) {
         toast(t('drive.noVersions'), 'info');
         return;
@@ -501,6 +776,265 @@ export default function EspacesPage() {
     }
   }
 
+  // ── Bulk actions ─────────────────────────────────────────────────────────────
+  async function bulkDelete() {
+    const items = entriesByKeys([...selected]);
+    if (items.length === 0) return;
+    if (!(await confirm({ title: t('drive.bulkDeleteTitle', { n: items.length }), confirmLabel: t('drive.deleteToTrash'), danger: true }))) return;
+    for (const it of items) {
+      if (it.kind === 'folder') await api.del(`/folders/${it.folder.id}`);
+      else if (it.kind === 'file') await api.del(`/files/${it.file.id}`);
+      else await api.del(`/zk/files/${it.zk.id}`);
+    }
+    setSelected(new Set());
+    await Promise.all([loadFolders(), reloadCurrent()]);
+    toast(t('drive.bulkDeleted', { n: items.length }), 'success');
+  }
+  async function bulkDownload() {
+    const items = entriesByKeys([...selected]);
+    for (const it of items) {
+      if (it.kind === 'file') {
+        const a = document.createElement('a');
+        a.href = api.url(`/files/${it.file.id}/download`);
+        a.download = it.file.name;
+        a.click();
+      } else if (it.kind === 'zk') {
+        const blob = await decryptZkBlob(it.zk);
+        if (blob) saveBlob(blob, zkName(it.zk));
+      }
+    }
+  }
+  async function bulkMove() {
+    const items = entriesByKeys([...selected]).filter((e) => e.kind !== 'zk');
+    if (items.length === 0) return;
+    const selfIds = new Set(items.map((e) => (e.kind === 'folder' ? e.folder.id : '')));
+    const targets = [
+      { id: null as string | null, name: t('drive.spaceRoot') },
+      ...allFolders.filter((f) => f.isZeroKnowledge === isZk && !selfIds.has(f.id)),
+    ];
+    const dest = await choose<string | '__root__'>({
+      title: t('drive.moveTitle'),
+      options: targets.map((tg) => ({ value: tg.id ?? '__root__', label: tg.name })),
+    });
+    if (dest === null) return;
+    const target = dest === '__root__' ? null : dest;
+    for (const it of items) {
+      if (it.kind === 'folder') await api.patch(`/folders/${it.folder.id}`, { parentId: target });
+      else if (it.kind === 'file') await api.patch(`/files/${it.file.id}`, { folderId: target });
+    }
+    setSelected(new Set());
+    await Promise.all([loadFolders(), reloadCurrent()]);
+    toast(t('drive.bulkMoved', { n: items.length }), 'success');
+  }
+
+  // ── Clipboard (normal spaces only) ───────────────────────────────────────────
+  function copyName(name: string) {
+    const suffix = ` ${t('drive.copySuffix')}`;
+    const dot = name.lastIndexOf('.');
+    return dot > 0 ? `${name.slice(0, dot)}${suffix}${name.slice(dot)}` : `${name}${suffix}`;
+  }
+  function buildClip(op: 'copy' | 'cut') {
+    if (isZk) return;
+    const items: ClipItem[] = entriesByKeys([...selected])
+      .filter((e) => e.kind !== 'zk')
+      .map((e) =>
+        e.kind === 'folder'
+          ? { kind: 'folder', id: e.folder.id, name: e.folder.name, sourceFolderId: e.folder.parentId }
+          : { kind: 'file', id: e.file.id, name: e.file.name, mimeType: e.file.mimeType, sourceFolderId: e.file.folderId },
+      );
+    if (items.length === 0) return;
+    setClipboard({ op, items });
+    toast(op === 'copy' ? t('drive.copied', { n: items.length }) : t('drive.cutReady', { n: items.length }), 'info');
+  }
+  async function duplicateFile(id: string, name: string, mime: string | undefined, targetFolderId: string, rename: boolean) {
+    const res = await fetch(api.url(`/files/${id}/download`), { credentials: 'include' });
+    const blob = await res.blob();
+    const form = new FormData();
+    form.append('file', new File([blob], rename ? copyName(name) : name, { type: mime || 'application/octet-stream' }));
+    await api.upload(`/files?folderId=${targetFolderId}`, form);
+  }
+  async function paste() {
+    if (isZk || !clipboard || !currentFolderId) return;
+    setBusy(t('drive.pasted'));
+    try {
+      let hadFolder = false;
+      for (const it of clipboard.items) {
+        if (clipboard.op === 'cut') {
+          if (it.kind === 'folder') await api.patch(`/folders/${it.id}`, { parentId: currentFolderId });
+          else await api.patch(`/files/${it.id}`, { folderId: currentFolderId });
+        } else if (it.kind === 'folder') {
+          hadFolder = true;
+        } else {
+          await duplicateFile(it.id, it.name, it.mimeType, currentFolderId, it.sourceFolderId === currentFolderId);
+        }
+      }
+      if (clipboard.op === 'cut') setClipboard(null);
+      await Promise.all([loadFolders(), reloadCurrent()]);
+      if (hadFolder) toast(t('drive.pasteFolderUnsupported'), 'info');
+      else toast(t('drive.pasted'), 'success');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('common.opFailed'));
+    } finally {
+      setBusy(null);
+    }
+  }
+  async function duplicateSelection() {
+    if (isZk || !currentFolderId) return;
+    const items = entriesByKeys([...selected]).filter((e): e is Extract<Entry, { kind: 'file' }> => e.kind === 'file');
+    if (items.length === 0) return;
+    setBusy(t('drive.actionDuplicate'));
+    try {
+      for (const it of items) await duplicateFile(it.file.id, it.file.name, it.file.mimeType, currentFolderId, true);
+      await reloadCurrent();
+      toast(t('drive.pasted'), 'success');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('common.opFailed'));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // ── Keyboard shortcuts ───────────────────────────────────────────────────────
+  // A ref keeps the latest handler so we register the window listener only once.
+  const keyHandler = (e: KeyboardEvent) => {
+    if (paletteOpen || helpOpen || viewing || askPass || shareLink) return;
+    if (document.querySelector('[class*="z-[100]"]')) return; // an in-app dialog is open
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      setPaletteOpen(true);
+      return;
+    }
+    const el = document.activeElement as HTMLElement | null;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+    if (!activeSpaceId) return;
+    if (e.key === '?') {
+      e.preventDefault();
+      setHelpOpen(true);
+      return;
+    }
+    if (mod && e.key.toLowerCase() === 'a') {
+      e.preventDefault();
+      selectAll();
+      return;
+    }
+    if (mod && e.key.toLowerCase() === 'c') {
+      e.preventDefault();
+      buildClip('copy');
+      return;
+    }
+    if (mod && e.key.toLowerCase() === 'x') {
+      e.preventDefault();
+      buildClip('cut');
+      return;
+    }
+    if (mod && e.key.toLowerCase() === 'v') {
+      e.preventDefault();
+      void paste();
+      return;
+    }
+    if (mod && e.key.toLowerCase() === 'd') {
+      e.preventDefault();
+      void duplicateSelection();
+      return;
+    }
+    if (needPass) return;
+    switch (e.key) {
+      case 'ArrowDown':
+      case 'ArrowRight':
+        e.preventDefault();
+        moveFocus(1);
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        moveFocus(-1);
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        if (e.altKey) goParent();
+        else moveFocus(-1);
+        break;
+      case 'Enter':
+        if (anchorKey) {
+          e.preventDefault();
+          const entry = entries.find((x) => x.key === anchorKey);
+          if (entry) openEntry(entry);
+        }
+        break;
+      case 'Backspace':
+        e.preventDefault();
+        goParent();
+        break;
+      case 'Delete':
+        e.preventDefault();
+        void bulkDelete();
+        break;
+      case 'F2':
+        if (selected.size === 1) {
+          e.preventDefault();
+          renameByKey([...selected][0]!);
+        }
+        break;
+      case 'Escape':
+        setSelected(new Set());
+        break;
+      default:
+        break;
+    }
+  };
+  const keyHandlerRef = useRef(keyHandler);
+  keyHandlerRef.current = keyHandler;
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => keyHandlerRef.current(e);
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, []);
+
+  // ── Command palette items ─────────────────────────────────────────────────────
+  const close = () => setPaletteOpen(false);
+  const paletteItems: PaletteItem[] = [];
+  if (activeSpaceId && !needPass) {
+    paletteItems.push({ id: 'cmd-newfile', kind: 'command', label: t('drive.cmdNewFile'), icon: FilePlus, run: () => { close(); void createFileDoc(); } });
+    paletteItems.push({ id: 'cmd-newfolder', kind: 'command', label: t('drive.cmdNewFolder'), icon: FolderPlus, run: () => { close(); void createFolder(); } });
+    paletteItems.push({ id: 'cmd-import', kind: 'command', label: t('drive.cmdImport'), icon: Upload, run: () => { close(); fileInput.current?.click(); } });
+    paletteItems.push({ id: 'cmd-view', kind: 'command', label: t('drive.cmdToggleView'), icon: LayoutGrid, run: () => { close(); setView((v) => (v === 'grid' ? 'list' : 'grid')); } });
+  }
+  paletteItems.push({ id: 'cmd-help', kind: 'command', label: t('drive.cmdHelp'), icon: Keyboard, run: () => { close(); setHelpOpen(true); } });
+  if (activeSpaceId) paletteItems.push({ id: 'cmd-spaces', kind: 'command', label: t('drive.cmdGoSpaces'), icon: Home, run: () => { close(); leaveSpace(); } });
+  for (const f of allFolders) {
+    paletteItems.push({
+      id: `f-${f.id}`,
+      kind: 'folder',
+      label: f.name,
+      sub: f.parentId === null ? (f.isZeroKnowledge ? t('drive.secured') : t('drive.normalSpace')) : undefined,
+      icon: f.isZeroKnowledge ? FolderLock : Folder,
+      run: () => { close(); jumpToFolder(f); },
+    });
+  }
+  for (const e of entries) {
+    if (e.kind === 'file') paletteItems.push({ id: `x-${e.file.id}`, kind: 'file', label: e.file.name, icon: fileVisual(e.file.name, e.file.mimeType).Icon, run: () => { close(); openFile(e.file); } });
+    else if (e.kind === 'zk') paletteItems.push({ id: `x-${e.zk.id}`, kind: 'file', label: e.name, icon: Lock, run: () => { close(); void openZk(e.zk); } });
+  }
+
+  function toggleSort(key: SortKey) {
+    setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
+  }
+  async function pickSort() {
+    const key = await choose<SortKey>({
+      title: t('drive.sortBy'),
+      options: [
+        { value: 'name', label: t('drive.colName') },
+        { value: 'size', label: t('drive.colSize') },
+        { value: 'date', label: t('drive.colModified') },
+      ],
+    });
+    if (key) toggleSort(key);
+  }
+  function SortCaret({ k }: { k: SortKey }) {
+    if (sort.key !== k) return null;
+    return sort.dir === 'asc' ? <ChevronUp size={13} /> : <ChevronDown size={13} />;
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (!activeSpaceId) {
@@ -513,11 +1047,7 @@ export default function EspacesPage() {
         </Header>
         {error && <ErrorLine msg={error} />}
         {spaces.length === 0 ? (
-          <Empty
-            icon={FolderLock}
-            title={t('drive.noSpacesTitle')}
-            hint={t('drive.noSpacesHint')}
-          />
+          <Empty icon={FolderLock} title={t('drive.noSpacesTitle')} hint={t('drive.noSpacesHint')} />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {spaces.map((s) => (
@@ -528,37 +1058,29 @@ export default function EspacesPage() {
                 <button onClick={() => enterSpace(s)} className="flex min-w-0 flex-1 items-center gap-4 text-left">
                   <span
                     className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl ${
-                      s.isZeroKnowledge
-                        ? 'bg-gradient-to-br from-violet-500/30 to-fuchsia-500/20 text-violet-200'
-                        : 'bg-white/[0.05] text-zinc-300'
+                      s.isZeroKnowledge ? 'bg-gradient-to-br from-violet-500/30 to-fuchsia-500/20 text-violet-200' : 'bg-white/[0.05] text-zinc-300'
                     }`}
                   >
                     {s.isZeroKnowledge ? <ShieldCheck size={22} /> : <Folder size={22} />}
                   </span>
                   <div className="min-w-0">
                     <p className="truncate font-medium text-zinc-100">{s.name}</p>
-                    <p className="text-xs text-zinc-500">
-                      {s.isZeroKnowledge ? t('drive.secured') : t('drive.normalSpace')}
-                    </p>
+                    <p className="text-xs text-zinc-500">{s.isZeroKnowledge ? t('drive.secured') : t('drive.normalSpace')}</p>
                   </div>
                 </button>
                 <div className="shrink-0">
-                  <Menu
-                    items={[
-                      { label: t('drive.deleteSpaceAction'), icon: Trash2, danger: true, onClick: () => deleteSpace(s) },
-                    ]}
-                  />
+                  <Menu items={[{ label: t('drive.deleteSpaceAction'), icon: Trash2, danger: true, onClick: () => deleteSpace(s) }]} />
                 </div>
               </div>
             ))}
           </div>
         )}
+        {paletteOpen && <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} />}
+        {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
         {viewing && <FileViewer source={viewing} onClose={() => setViewing(null)} />}
       </div>
     );
   }
-
-  const needPass = isZk && !vaultKey;
 
   return (
     <div className="space-y-5">
@@ -591,14 +1113,21 @@ export default function EspacesPage() {
             <ViewBtn active={view === 'list'} onClick={() => setView('list')} icon={ListIcon} />
             <ViewBtn active={view === 'grid'} onClick={() => setView('grid')} icon={LayoutGrid} />
           </div>
+          <button className="btn-ghost" onClick={pickSort} title={t('drive.sortBy')}>
+            <ArrowDownUp size={16} />
+          </button>
+          {!isZk && clipboard && (
+            <button className="btn-ghost" onClick={() => void paste()} disabled={needPass || !!busy}>
+              <ClipboardPaste size={16} /> {t('drive.scPaste')}
+            </button>
+          )}
           <button className="btn-ghost" onClick={createFolder} disabled={needPass}>
             <FolderPlus size={16} /> {t('drive.folder')}
           </button>
-          <button
-            className="btn-primary"
-            onClick={() => fileInput.current?.click()}
-            disabled={needPass || !!busy}
-          >
+          <button className="btn-ghost" onClick={createFileDoc} disabled={needPass}>
+            <FilePlus size={16} /> {t('drive.newFile')}
+          </button>
+          <button className="btn-primary" onClick={() => fileInput.current?.click()} disabled={needPass || !!busy}>
             <Upload size={16} /> {busy ?? t('drive.import')}
           </button>
           <input ref={fileInput} type="file" multiple className="hidden" onChange={(e) => onUpload(e.target.files)} />
@@ -606,6 +1135,20 @@ export default function EspacesPage() {
       </Header>
 
       {error && <ErrorLine msg={error} />}
+
+      {/* Selection toolbar */}
+      {selected.size > 0 && !needPass && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-accent/30 bg-accent/[0.06] px-3 py-2 text-sm">
+          <span className="font-medium text-zinc-100">{t('drive.selectedCount', { n: selected.size })}</span>
+          <div className="flex-1" />
+          <BulkBtn icon={Download} label={t('drive.bulkDownload')} onClick={() => void bulkDownload()} />
+          {!isZk && <BulkBtn icon={Copy} label={t('drive.actionCopy')} onClick={() => buildClip('copy')} />}
+          {!isZk && <BulkBtn icon={Scissors} label={t('drive.actionCut')} onClick={() => buildClip('cut')} />}
+          {!isZk && <BulkBtn icon={FolderInput} label={t('drive.bulkMove')} onClick={() => void bulkMove()} />}
+          <BulkBtn icon={Trash2} label={t('drive.bulkDelete')} danger onClick={() => void bulkDelete()} />
+          <BulkBtn icon={X} label={t('drive.clearSelection')} onClick={() => setSelected(new Set())} />
+        </div>
+      )}
 
       {progress !== null && (
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
@@ -619,126 +1162,89 @@ export default function EspacesPage() {
             <Lock size={16} /> {t('drive.unlock')}
           </button>
         </Empty>
+      ) : entries.length === 0 ? (
+        <Empty icon={Upload} title={t('drive.emptyFolderTitle')} hint={t('drive.emptyFolderHint')} />
+      ) : view === 'grid' ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {entries.map((e) => (
+            <GridCard
+              key={e.key}
+              selected={selected.has(e.key)}
+              iconNode={cardIcon(e, isZk)}
+              name={e.name}
+              sub={e.kind === 'folder' ? undefined : formatBytes(e.size)}
+              onClick={(ev) => onEntryClick(ev, e)}
+              onDoubleClick={() => openEntry(e)}
+            />
+          ))}
+        </div>
       ) : (
-        <div
-          className={`rounded-2xl border-2 border-dashed p-1 transition ${
-            dragging ? 'border-accent/60 bg-accent/[0.04]' : 'border-transparent'
-          }`}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragging(false);
-            void onUpload(e.dataTransfer.files);
-          }}
-        >
-          {childFolders.length === 0 && files.length === 0 && zkFiles.length === 0 ? (
-            <Empty icon={Upload} title={t('drive.emptyFolderTitle')} hint={t('drive.emptyFolderHint')} />
-          ) : view === 'grid' ? (
-            <div className="grid grid-cols-2 gap-3 p-2 sm:grid-cols-3 lg:grid-cols-4">
-              {childFolders.map((f) => (
-                <GridCard
-                  key={f.id}
-                  iconNode={
-                    isZk ? <FolderLock size={30} className="text-violet-300" /> : <Folder size={30} className="text-zinc-400" />
-                  }
-                  name={f.name}
-                  onOpen={() => setCurrentFolderId(f.id)}
-                />
-              ))}
-              {files.map((f) => {
-                const v = fileVisual(f.name, f.mimeType);
-                return (
-                  <GridCard
-                    key={f.id}
-                    iconNode={<v.Icon size={30} className={v.color} />}
-                    name={f.name}
-                    sub={formatBytes(f.sizeBytes)}
-                    onOpen={() => openFile(f)}
+        <div className="space-y-2">
+          {/* column headers */}
+          <div className="flex items-center gap-3 px-3 text-xs text-zinc-500">
+            <button className="flex items-center gap-1 hover:text-zinc-300" onClick={() => toggleSort('name')}>
+              {t('drive.colName')} <SortCaret k="name" />
+            </button>
+            <div className="flex-1" />
+            <button className="hidden items-center gap-1 hover:text-zinc-300 sm:flex" onClick={() => toggleSort('date')}>
+              {t('drive.colModified')} <SortCaret k="date" />
+            </button>
+            <button className="flex w-20 items-center justify-end gap-1 hover:text-zinc-300" onClick={() => toggleSort('size')}>
+              {t('drive.colSize')} <SortCaret k="size" />
+            </button>
+            <span className="w-[88px]" />
+          </div>
+
+          {entries.map((e) => (
+            <div
+              key={e.key}
+              onClick={(ev) => onEntryClick(ev, e)}
+              onDoubleClick={() => openEntry(e)}
+              className={`row cursor-default ${selected.has(e.key) ? 'bg-accent/[0.08] ring-1 ring-inset ring-accent/40' : ''}`}
+            >
+              <button className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={(ev) => onNameClick(ev, e)}>
+                {rowIcon(e, isZk)}
+                <span className="truncate font-medium text-zinc-100">{e.name}</span>
+              </button>
+              <span className="hidden shrink-0 text-xs text-zinc-500 sm:block">{new Date(e.date).toLocaleDateString()}</span>
+              <span className="w-20 shrink-0 text-right text-xs text-zinc-500">{e.kind === 'folder' ? '—' : formatBytes(e.size)}</span>
+              <div className="flex shrink-0 items-center gap-0.5" onClick={(ev) => ev.stopPropagation()}>
+                {e.kind === 'folder' ? (
+                  <Menu
+                    items={[
+                      { label: t('drive.actionRename'), icon: Pencil, onClick: () => renameFolder(e.folder) },
+                      ...(!isZk ? [{ label: t('drive.actionMove'), icon: FolderInput, onClick: () => move('folder', e.folder.id) }] : []),
+                      ...(!isZk ? [{ label: t('drive.actionShare'), icon: Share2, onClick: () => share('folder', e.folder.id) }] : []),
+                      { label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => deleteFolder(e.folder.id) },
+                    ]}
                   />
-                );
-              })}
-              {zkFiles.map((f) => (
-                <GridCard
-                  key={f.id}
-                  iconNode={<Lock size={30} className="text-violet-300" />}
-                  name={f.plainName ?? '🔒'}
-                  sub={formatBytes(f.sizeBytes)}
-                  onOpen={() => openZk(f)}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-2 p-1">
-              {childFolders.map((f) => (
-                <div key={f.id} className="row">
-                  <button className="flex min-w-0 items-center gap-3" onClick={() => setCurrentFolderId(f.id)}>
-                    {isZk ? <FolderLock size={18} className="text-violet-300" /> : <Folder size={18} className="text-zinc-400" />}
-                    <span className="truncate font-medium text-zinc-100">{f.name}</span>
-                  </button>
-                  <RowActions>
+                ) : e.kind === 'file' ? (
+                  <>
+                    <IconBtn title={t('drive.open')} icon={Eye} onClick={() => openFile(e.file)} />
+                    <a className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100" title={t('drive.actionDownload')} href={api.url(`/files/${e.file.id}/download`)}>
+                      <Download size={16} />
+                    </a>
                     <Menu
                       items={[
-                        { label: t('drive.actionRename'), icon: Pencil, onClick: () => renameFolder(f) },
-                        ...(!isZk ? [{ label: t('drive.actionShare'), icon: Share2, onClick: () => share('folder', f.id) }] : []),
-                        { label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => deleteFolder(f.id) },
+                        { label: t('drive.actionRename'), icon: Pencil, onClick: () => renameFile(e.file) },
+                        { label: t('drive.actionMove'), icon: FolderInput, onClick: () => move('file', e.file.id) },
+                        { label: t('drive.actionDuplicate'), icon: Files, onClick: () => void duplicateFile(e.file.id, e.file.name, e.file.mimeType, currentFolderId!, true).then(reloadCurrent) },
+                        { label: t('drive.actionShare'), icon: Share2, onClick: () => share('file', e.file.id) },
+                        { label: t('drive.actionVersions'), icon: History, onClick: () => versions(e.file) },
+                        { label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => deleteFile(e.file.id) },
                       ]}
                     />
-                  </RowActions>
-                </div>
-              ))}
-
-              {files.map((f) => {
-                const v = fileVisual(f.name, f.mimeType);
-                return (
-                  <div key={f.id} className="row">
-                    <button className="flex min-w-0 items-center gap-3 text-left" onClick={() => openFile(f)}>
-                      <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${v.bg} ${v.color}`}>
-                        <v.Icon size={16} />
-                      </span>
-                      <span className="truncate font-medium text-zinc-100">{f.name}</span>
-                      <span className="shrink-0 text-xs text-zinc-500">{formatBytes(f.sizeBytes)}</span>
-                    </button>
-                    <RowActions>
-                      <IconBtn title={t('drive.open')} icon={Eye} onClick={() => openFile(f)} />
-                      <a className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100" title={t('drive.actionDownload')} href={api.url(`/files/${f.id}/download`)}>
-                        <Download size={16} />
-                      </a>
-                      <Menu
-                        items={[
-                          { label: t('drive.actionRename'), icon: Pencil, onClick: () => renameFile(f) },
-                          { label: t('drive.actionMove'), icon: FolderInput, onClick: () => move('file', f.id) },
-                          { label: t('drive.actionShare'), icon: Share2, onClick: () => share('file', f.id) },
-                          { label: t('drive.actionVersions'), icon: History, onClick: () => versions(f) },
-                          { label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => deleteFile(f.id) },
-                        ]}
-                      />
-                    </RowActions>
-                  </div>
-                );
-              })}
-
-              {zkFiles.map((f) => (
-                <div key={f.id} className="row">
-                  <button className="flex min-w-0 items-center gap-3 text-left" onClick={() => openZk(f)}>
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-violet-500/10 text-violet-300">
-                      <Lock size={16} />
-                    </span>
-                    <span className="truncate font-medium text-zinc-100">{f.plainName ?? '🔒'}</span>
-                    <span className="shrink-0 text-xs text-zinc-500">{formatBytes(f.sizeBytes)}</span>
-                  </button>
-                  <RowActions>
-                    <IconBtn title={t('drive.open')} icon={Eye} onClick={() => openZk(f)} />
-                    <IconBtn title={t('drive.actionDownload')} icon={Download} onClick={() => downloadZk(f)} />
-                    <Menu items={[{ label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => deleteFile(f.id) }]} />
-                  </RowActions>
-                </div>
-              ))}
+                  </>
+                ) : (
+                  <>
+                    <IconBtn title={t('drive.open')} icon={Eye} onClick={() => openZk(e.zk)} />
+                    <IconBtn title={t('drive.actionDownload')} icon={Download} onClick={() => downloadZk(e.zk)} />
+                    <Menu items={[{ label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => deleteFile(e.zk.id) }]} />
+                  </>
+                )}
+              </div>
             </div>
-          )}
+          ))}
         </div>
       )}
 
@@ -755,9 +1261,7 @@ export default function EspacesPage() {
                 <p className="text-xs text-zinc-500">{askPass.name}</p>
               </div>
             </div>
-            <p className="text-sm text-zinc-400">
-              {t('drive.passphraseExplain')}
-            </p>
+            <p className="text-sm text-zinc-400">{t('drive.passphraseExplain')}</p>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -790,16 +1294,38 @@ export default function EspacesPage() {
         </Modal>
       )}
 
-      {/* Share-link result modal */}
       {shareLink && <ShareLinkModal link={shareLink} onClose={() => setShareLink(null)} />}
-
-      {/* In-app file viewer */}
+      {paletteOpen && <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} />}
+      {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
       {viewing && <FileViewer source={viewing} onClose={() => setViewing(null)} />}
+      <DropOverlay show={dragging} />
     </div>
   );
 }
 
 // ── Small presentational helpers ──────────────────────────────────────────────
+
+function cardIcon(e: Entry, isZk: boolean) {
+  if (e.kind === 'folder') return isZk ? <FolderLock size={30} className="text-violet-300" /> : <Folder size={30} className="text-zinc-400" />;
+  if (e.kind === 'zk') return <Lock size={30} className="text-violet-300" />;
+  const v = fileVisual(e.file.name, e.file.mimeType);
+  return <v.Icon size={30} className={v.color} />;
+}
+function rowIcon(e: Entry, isZk: boolean) {
+  if (e.kind === 'folder') return isZk ? <FolderLock size={18} className="text-violet-300" /> : <Folder size={18} className="text-zinc-400" />;
+  if (e.kind === 'zk')
+    return (
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-violet-500/10 text-violet-300">
+        <Lock size={16} />
+      </span>
+    );
+  const v = fileVisual(e.file.name, e.file.mimeType);
+  return (
+    <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${v.bg} ${v.color}`}>
+      <v.Icon size={16} />
+    </span>
+  );
+}
 
 function Header({
   title,
@@ -843,28 +1369,23 @@ function ViewBtn({ active, onClick, icon: Icon }: { active: boolean; onClick: ()
   );
 }
 
-function RowActions({ children }: { children: React.ReactNode }) {
-  return <div className="flex shrink-0 items-center gap-0.5">{children}</div>;
+function BulkBtn({ icon: Icon, label, onClick, danger }: { icon: typeof Pencil; label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs transition hover:bg-white/10 ${danger ? 'text-red-300' : 'text-zinc-300'}`}
+    >
+      <Icon size={14} /> {label}
+    </button>
+  );
 }
 
-function IconBtn({
-  icon: Icon,
-  title,
-  onClick,
-  danger,
-}: {
-  icon: typeof Pencil;
-  title: string;
-  onClick: () => void;
-  danger?: boolean;
-}) {
+function IconBtn({ icon: Icon, title, onClick, danger }: { icon: typeof Pencil; title: string; onClick: () => void; danger?: boolean }) {
   return (
     <button
       title={title}
       onClick={onClick}
-      className={`rounded-lg p-1.5 transition hover:bg-white/5 ${
-        danger ? 'text-zinc-400 hover:text-red-300' : 'text-zinc-400 hover:text-zinc-100'
-      }`}
+      className={`rounded-lg p-1.5 transition hover:bg-white/5 ${danger ? 'text-zinc-400 hover:text-red-300' : 'text-zinc-400 hover:text-zinc-100'}`}
     >
       <Icon size={16} />
     </button>
@@ -875,22 +1396,29 @@ function GridCard({
   iconNode,
   name,
   sub,
-  onOpen,
+  selected,
+  onClick,
+  onDoubleClick,
 }: {
   iconNode: React.ReactNode;
   name: string;
   sub?: string;
-  onOpen?: () => void;
+  selected?: boolean;
+  onClick?: (e: React.MouseEvent) => void;
+  onDoubleClick?: () => void;
 }) {
   return (
-    <button
-      onClick={onOpen}
-      className="card flex flex-col items-center gap-2 py-5 text-center transition hover:border-white/15 hover:bg-white/[0.04]"
+    <div
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      className={`card flex cursor-default select-none flex-col items-center gap-2 py-5 text-center transition hover:border-white/15 hover:bg-white/[0.04] ${
+        selected ? 'bg-accent/[0.08] ring-1 ring-inset ring-accent/40' : ''
+      }`}
     >
       {iconNode}
       <span className="line-clamp-2 w-full break-words text-sm font-medium text-zinc-100">{name}</span>
       {sub && <span className="text-xs text-zinc-500">{sub}</span>}
-    </button>
+    </div>
   );
 }
 

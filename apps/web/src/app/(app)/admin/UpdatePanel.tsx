@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { GitCommitHorizontal, RefreshCw, Download, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+import { useT } from '@/lib/i18n';
 import { confirm, toast } from '@/components/ui/overlays';
 
 interface LocalVersion {
@@ -45,6 +46,7 @@ interface VersionInfo {
 }
 
 export function UpdatePanel() {
+  const { t } = useT();
   const [info, setInfo] = useState<VersionInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<'check' | 'update' | null>(null);
@@ -96,17 +98,16 @@ export function UpdatePanel() {
 
   async function runUpdate() {
     const ok = await confirm({
-      title: 'Mettre à jour maintenant ?',
-      message:
-        'L’instance va récupérer la dernière version, se reconstruire et redémarrer. Une courte coupure est possible.',
-      confirmLabel: 'Mettre à jour',
+      title: t('admin.updateConfirmTitle'),
+      message: t('admin.updateConfirmMsg'),
+      confirmLabel: t('admin.updateConfirmBtn'),
     });
     if (!ok) return;
     setBusy('update');
     setError(null);
     try {
       await api.post('/admin/update');
-      toast('Mise à jour lancée — redémarrage en cours…', 'info');
+      toast(t('admin.updateStarted'), 'info');
       await fetchVersion(false);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e));
@@ -118,8 +119,8 @@ export function UpdatePanel() {
   if (!info) {
     return (
       <section className="card">
-        <h2 className="font-semibold">Version &amp; mises à jour</h2>
-        <p className="mt-2 text-sm text-zinc-500">Chargement…</p>
+        <h2 className="font-semibold">{t('admin.versionUpdates')}</h2>
+        <p className="mt-2 text-sm text-zinc-500">{t('common.loading')}</p>
       </section>
     );
   }
@@ -130,9 +131,9 @@ export function UpdatePanel() {
   return (
     <section className="card space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-semibold">Version &amp; mises à jour</h2>
+        <h2 className="font-semibold">{t('admin.versionUpdates')}</h2>
         <button className="btn-ghost" onClick={check} disabled={busy !== null || running}>
-          <RefreshCw size={15} className={busy === 'check' ? 'animate-spin' : ''} /> Vérifier
+          <RefreshCw size={15} className={busy === 'check' ? 'animate-spin' : ''} /> {t('admin.check')}
         </button>
       </div>
 
@@ -145,7 +146,7 @@ export function UpdatePanel() {
           {current.isGit ? (
             <>
               <p className="text-sm text-zinc-200">
-                Version actuelle{' '}
+                {t('admin.currentVersionPre')}{' '}
                 <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-xs text-zinc-100">
                   {current.shortSha}
                 </code>{' '}
@@ -158,7 +159,7 @@ export function UpdatePanel() {
             </>
           ) : (
             <p className="text-sm text-zinc-400">
-              Version inconnue — ce déploiement n’est pas un dépôt git, mettez à jour manuellement.
+              {t('admin.versionUnknown')}
             </p>
           )}
         </div>
@@ -167,17 +168,17 @@ export function UpdatePanel() {
       {/* Update status while running / after */}
       {running && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-sm text-amber-200">
-          <Loader2 size={15} className="animate-spin" /> {status.message ?? 'Mise à jour en cours…'}
+          <Loader2 size={15} className="animate-spin" /> {status.message ?? t('admin.updateRunning')}
         </div>
       )}
       {!running && status.state === 'success' && (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2 text-sm text-emerald-200">
-          <CheckCircle2 size={15} /> {status.message ?? 'Dernière mise à jour réussie.'}
+          <CheckCircle2 size={15} /> {status.message ?? t('admin.updateSuccess')}
         </div>
       )}
       {!running && status.state === 'failed' && (
         <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-sm text-red-300">
-          <AlertTriangle size={15} /> Échec : {status.message ?? 'voir .update.log sur le serveur.'}
+          <AlertTriangle size={15} /> {t('admin.updateFailedPre')} {status.message ?? t('admin.updateFailedDefault')}
         </div>
       )}
 
@@ -186,18 +187,18 @@ export function UpdatePanel() {
         <div className="rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
           {remote == null ? (
             <p className="text-sm text-zinc-500">
-              Impossible de joindre GitHub pour vérifier (limite de débit ou réseau). Réessayez plus tard.
+              {t('admin.githubUnreachable')}
             </p>
           ) : updateAvailable ? (
             <div className="space-y-2">
               <p className="text-sm text-zinc-200">
-                Mise à jour disponible
+                {t('admin.updateAvailable')}
                 {typeof behindBy === 'number' && behindBy > 0 && (
-                  <span className="text-zinc-400"> — {behindBy} commit{behindBy > 1 ? 's' : ''} de retard</span>
+                  <span className="text-zinc-400">{behindBy > 1 ? t('admin.behindMany', { count: behindBy }) : t('admin.behindOne', { count: behindBy })}</span>
                 )}
               </p>
               <p className="truncate text-xs text-zinc-500">
-                Dernière :{' '}
+                {t('admin.latest')}{' '}
                 <a href={remote.htmlUrl} target="_blank" rel="noreferrer" className="font-mono text-violet-300 hover:underline">
                   {remote.shortSha}
                 </a>{' '}
@@ -205,18 +206,18 @@ export function UpdatePanel() {
               </p>
               {selfUpdateEnabled ? (
                 <button className="btn-primary" onClick={runUpdate} disabled={busy !== null || running}>
-                  <Download size={15} /> Mettre à jour maintenant
+                  <Download size={15} /> {t('admin.updateNow')}
                 </button>
               ) : (
                 <p className="text-xs text-zinc-500">
-                  La mise à jour en un clic est désactivée (SELF_UPDATE_ENABLED=false). Lancez{' '}
-                  <code className="font-mono">./scripts/ocl.sh update</code> sur le serveur.
+                  {t('admin.selfUpdateDisabledPre')}{' '}
+                  <code className="font-mono">./scripts/ocl.sh update</code> {t('admin.selfUpdateDisabledPost')}
                 </p>
               )}
             </div>
           ) : (
             <p className="flex items-center gap-2 text-sm text-emerald-300">
-              <CheckCircle2 size={15} /> Vous êtes à jour.
+              <CheckCircle2 size={15} /> {t('admin.upToDate')}
             </p>
           )}
         </div>

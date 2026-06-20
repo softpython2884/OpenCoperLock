@@ -5,6 +5,7 @@ import type { PublicQuickCode, PublicUser } from '@opencoperlock/shared/client';
 import { formatBytes } from '@opencoperlock/shared/client';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useT } from '@/lib/i18n';
 import { confirm, prompt } from '@/components/ui/overlays';
 import { UpdatePanel } from './UpdatePanel';
 
@@ -25,6 +26,7 @@ interface AuditEntry {
 
 export default function AdminPage() {
   const { user } = useAuth();
+  const { t } = useT();
   const [stats, setStats] = useState<Stats | null>(null);
   const [users, setUsers] = useState<PublicUser[]>([]);
   const [codes, setCodes] = useState<PublicQuickCode[]>([]);
@@ -77,7 +79,7 @@ export default function AdminPage() {
 
       {alerts.length > 0 && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950">
-          <p className="mb-1 text-sm font-medium text-amber-800 dark:text-amber-200">Alerts</p>
+          <p className="mb-1 text-sm font-medium text-amber-800 dark:text-amber-200">{t('admin.alerts')}</p>
           <ul className="list-inside list-disc text-sm text-amber-800 dark:text-amber-200">
             {alerts.map((a, i) => (
               <li key={i}>{a}</li>
@@ -89,12 +91,12 @@ export default function AdminPage() {
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Stat label="Users" value={String(stats.userCount)} />
-          <Stat label="Files" value={String(stats.fileCount)} />
-          <Stat label="Storage used" value={formatBytes(stats.globalUsedBytes)} />
+          <Stat label={t('admin.statUsers')} value={String(stats.userCount)} />
+          <Stat label={t('admin.statFiles')} value={String(stats.fileCount)} />
+          <Stat label={t('admin.statStorageUsed')} value={formatBytes(stats.globalUsedBytes)} />
           <Stat
-            label="Global cap"
-            value={stats.globalCapBytes === 0 ? 'Unlimited' : formatBytes(stats.globalCapBytes)}
+            label={t('admin.statGlobalCap')}
+            value={stats.globalCapBytes === 0 ? t('admin.unlimited') : formatBytes(stats.globalCapBytes)}
           />
         </div>
       )}
@@ -104,8 +106,8 @@ export default function AdminPage() {
 
       {/* Global cap setting */}
       <section className="card space-y-2">
-        <h2 className="font-semibold">Global storage cap</h2>
-        <p className="text-sm text-neutral-500">Total bytes across all users. 0 = unlimited.</p>
+        <h2 className="font-semibold">{t('admin.globalCapTitle')}</h2>
+        <p className="text-sm text-neutral-500">{t('admin.globalCapHint')}</p>
         <div className="flex gap-2">
           <input className="input" value={cap} onChange={(e) => setCap(e.target.value)} />
           <button
@@ -116,24 +118,24 @@ export default function AdminPage() {
               )
             }
           >
-            Save
+            {t('admin.save')}
           </button>
         </div>
       </section>
 
       {/* Users */}
       <section className="card space-y-3">
-        <h2 className="font-semibold">Users</h2>
+        <h2 className="font-semibold">{t('admin.users')}</h2>
         <div className="flex flex-wrap gap-2">
           <input
             className="input max-w-xs"
-            placeholder="email"
+            placeholder={t('admin.emailPlaceholder')}
             value={nu.email}
             onChange={(e) => setNu({ ...nu, email: e.target.value })}
           />
           <input
             className="input max-w-xs"
-            placeholder="password (min 12)"
+            placeholder={t('admin.passwordPlaceholder')}
             type="password"
             value={nu.password}
             onChange={(e) => setNu({ ...nu, password: e.target.value })}
@@ -143,8 +145,8 @@ export default function AdminPage() {
             value={nu.role}
             onChange={(e) => setNu({ ...nu, role: e.target.value })}
           >
-            <option value="USER">User</option>
-            <option value="ADMIN">Admin</option>
+            <option value="USER">{t('admin.roleUser')}</option>
+            <option value="ADMIN">{t('admin.roleAdmin')}</option>
           </select>
           <button
             className="btn-primary"
@@ -155,7 +157,7 @@ export default function AdminPage() {
               })
             }
           >
-            Add user
+            {t('admin.addUser')}
           </button>
         </div>
         <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -166,7 +168,7 @@ export default function AdminPage() {
                 <span className="text-xs text-neutral-400">
                   {u.role} · {formatBytes(u.usedBytes)}
                   {u.quotaBytes !== null && ` / ${formatBytes(u.quotaBytes)}`}
-                  {u.disabled && ' · disabled'}
+                  {u.disabled && ` · ${t('admin.disabled')}`}
                 </span>
               </div>
               <div className="flex gap-2">
@@ -174,8 +176,8 @@ export default function AdminPage() {
                   className="btn-ghost px-2 py-1"
                   onClick={async () => {
                     const gb = await prompt({
-                      title: 'Quota de stockage',
-                      label: 'Quota en Gio (vide = illimité)',
+                      title: t('admin.quotaTitle'),
+                      label: t('admin.quotaLabel'),
                       defaultValue: u.quotaBytes !== null ? String(Math.round(u.quotaBytes / 1024 ** 3)) : '',
                     });
                     if (gb === null) return;
@@ -183,24 +185,24 @@ export default function AdminPage() {
                     void wrap(() => api.patch(`/admin/users/${u.id}`, { quotaBytes }));
                   }}
                 >
-                  Quota
+                  {t('admin.quota')}
                 </button>
                 <button
                   className="btn-ghost px-2 py-1"
                   disabled={u.id === user?.id}
                   onClick={() => wrap(() => api.patch(`/admin/users/${u.id}`, { disabled: !u.disabled }))}
                 >
-                  {u.disabled ? 'Enable' : 'Disable'}
+                  {u.disabled ? t('admin.enable') : t('admin.disable')}
                 </button>
                 <button
                   className="btn-danger px-2 py-1"
                   disabled={u.id === user?.id}
                   onClick={async () => {
-                    if (await confirm({ title: `Supprimer ${u.email} ?`, danger: true, confirmLabel: 'Supprimer' }))
+                    if (await confirm({ title: t('admin.deleteUserTitle', { email: u.email }), danger: true, confirmLabel: t('admin.delete') }))
                       void wrap(() => api.del(`/admin/users/${u.id}`));
                   }}
                 >
-                  Delete
+                  {t('admin.delete')}
                 </button>
               </div>
             </div>
@@ -210,16 +212,15 @@ export default function AdminPage() {
 
       {/* Quick codes */}
       <section className="card space-y-3">
-        <h2 className="font-semibold">Quick-Upload codes</h2>
+        <h2 className="font-semibold">{t('admin.quickCodes')}</h2>
         <p className="text-sm text-neutral-500">
-          Leave the code blank for a random one, or set a memorable code you can type from any
-          device (letters, digits and dashes). Files dropped with a code land in your
-          <span className="font-medium text-zinc-300"> Fast-Upload</span> folder.
+          {t('admin.quickCodesHintPre')}{' '}
+          <span className="font-medium text-zinc-300">{t('admin.quickCodesFolder')}</span>.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <input
             className="input max-w-xs font-mono uppercase tracking-wide"
-            placeholder="Custom code (optional)"
+            placeholder={t('admin.customCodePlaceholder')}
             value={nc.code}
             onChange={(e) => setNc({ ...nc, code: e.target.value.toUpperCase() })}
           />
@@ -227,7 +228,7 @@ export default function AdminPage() {
             className="input max-w-[10rem]"
             type="number"
             min={1}
-            placeholder="Usage limit (∞)"
+            placeholder={t('admin.usageLimitPlaceholder')}
             value={nc.usageLimit}
             onChange={(e) => setNc({ ...nc, usageLimit: e.target.value })}
           />
@@ -243,7 +244,7 @@ export default function AdminPage() {
               })
             }
           >
-            Create code
+            {t('admin.createCode')}
           </button>
         </div>
         <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -254,28 +255,29 @@ export default function AdminPage() {
                   {c.code}
                 </code>{' '}
                 <span className="text-xs text-neutral-400">
-                  used {c.usageCount}
-                  {c.usageLimit !== null && `/${c.usageLimit}`}
+                  {c.usageLimit !== null
+                    ? t('admin.usedCountLimited', { count: c.usageCount, limit: c.usageLimit })
+                    : t('admin.usedCount', { count: c.usageCount })}
                 </span>
               </div>
               <button className="btn-danger px-2 py-1" onClick={() => wrap(() => api.del(`/admin/quick-codes/${c.id}`))}>
-                Revoke
+                {t('admin.revoke')}
               </button>
             </div>
           ))}
-          {codes.length === 0 && <p className="py-2 text-sm text-neutral-400">No active codes.</p>}
+          {codes.length === 0 && <p className="py-2 text-sm text-neutral-400">{t('admin.noCodes')}</p>}
         </div>
       </section>
 
       {/* Audit */}
       <section className="card space-y-2">
-        <h2 className="font-semibold">Audit log</h2>
+        <h2 className="font-semibold">{t('admin.auditLog')}</h2>
         <div className="max-h-72 overflow-auto text-xs">
           {audit.map((a) => (
             <div key={a.id} className="flex justify-between gap-2 border-b border-neutral-100 py-1 dark:border-neutral-800">
               <span className="font-mono">{a.action}</span>
               <span className="text-neutral-400">
-                {a.actorEmail ?? 'guest'} · {a.ip} · {new Date(a.createdAt).toLocaleString()}
+                {a.actorEmail ?? t('admin.guest')} · {a.ip} · {new Date(a.createdAt).toLocaleString()}
               </span>
             </div>
           ))}

@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, API_URL, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useT } from '@/lib/i18n';
 import { prompt } from '@/components/ui/overlays';
 
 interface TwoFaStatus {
@@ -30,6 +31,7 @@ interface SessionInfo {
 
 export default function AccountPage() {
   const { refresh } = useAuth();
+  const { t } = useT();
   const router = useRouter();
   const [status, setStatus] = useState<TwoFaStatus | null>(null);
   const [setup, setSetup] = useState<SetupData | null>(null);
@@ -75,7 +77,7 @@ export default function AccountPage() {
   }
 
   async function disable() {
-    const password = await prompt({ title: 'Désactiver la 2FA', label: 'Confirmez votre mot de passe', password: true });
+    const password = await prompt({ title: t('account.disable2faTitle'), label: t('account.confirmPassword'), password: true });
     if (!password) return;
     await wrap(async () => {
       await api.post('/2fa/disable', { password });
@@ -85,7 +87,7 @@ export default function AccountPage() {
   }
 
   async function regenerate() {
-    const password = await prompt({ title: 'Régénérer les codes de secours', label: 'Confirmez votre mot de passe', password: true });
+    const password = await prompt({ title: t('account.regenTitle'), label: t('account.confirmPassword'), password: true });
     if (!password) return;
     await wrap(async () => {
       const res = await api.post<{ recoveryCodes: string[] }>('/2fa/recovery/regenerate', { password });
@@ -109,9 +111,9 @@ export default function AccountPage() {
 
   async function deleteAccount() {
     const password = await prompt({
-      title: 'Supprimer le compte',
-      message: 'Cette action supprime définitivement votre compte et tous vos fichiers. Irréversible.',
-      label: 'Confirmez votre mot de passe',
+      title: t('account.deleteTitle'),
+      message: t('account.deleteMsg'),
+      label: t('account.confirmPassword'),
       password: true,
     });
     if (!password) return;
@@ -124,22 +126,22 @@ export default function AccountPage() {
 
   return (
     <div className="space-y-8">
-      <h1 className="text-lg font-semibold">Account security</h1>
+      <h1 className="text-lg font-semibold">{t('account.title')}</h1>
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       {/* Two-factor */}
       <section className="card space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Two-factor authentication</h2>
+          <h2 className="font-semibold">{t('account.twoFa')}</h2>
           <span className="text-xs text-neutral-400">
-            {status?.enabled ? `On · ${status.recoveryCodesRemaining} recovery codes left` : 'Off'}
+            {status?.enabled ? t('account.twoFaOn', { count: status.recoveryCodesRemaining }) : t('account.twoFaOff')}
           </span>
         </div>
 
         {recoveryCodes && (
           <div className="rounded border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950">
             <p className="mb-2 text-sm font-medium text-amber-800 dark:text-amber-200">
-              Save these recovery codes now. They are shown only once and each works a single time.
+              {t('account.saveCodes')}
             </p>
             <div className="grid grid-cols-2 gap-1 font-mono text-sm">
               {recoveryCodes.map((c) => (
@@ -151,19 +153,19 @@ export default function AccountPage() {
 
         {!status?.enabled && !setup && (
           <button className="btn-primary" onClick={beginSetup}>
-            Enable two-factor
+            {t('account.enable2fa')}
           </button>
         )}
 
         {!status?.enabled && setup && (
           <div className="space-y-3">
             <p className="text-sm text-neutral-500">
-              Scan this with Google Authenticator (or any TOTP app), then enter the 6-digit code.
+              {t('account.scanHint')}
             </p>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={setup.qrDataUrl} alt="TOTP QR code" className="h-44 w-44 rounded bg-white p-2" />
+            <img src={setup.qrDataUrl} alt={t('account.qrAlt')} className="h-44 w-44 rounded bg-white p-2" />
             <p className="break-all text-xs text-neutral-400">
-              Or enter this secret manually: <code className="font-mono">{setup.secret}</code>
+              {t('account.manualSecret')} <code className="font-mono">{setup.secret}</code>
             </p>
             <div className="flex gap-2">
               <input
@@ -174,7 +176,7 @@ export default function AccountPage() {
                 onChange={(e) => setToken(e.target.value)}
               />
               <button className="btn-primary" onClick={enable}>
-                Verify &amp; enable
+                {t('account.verifyEnable')}
               </button>
             </div>
           </div>
@@ -183,10 +185,10 @@ export default function AccountPage() {
         {status?.enabled && (
           <div className="flex gap-2">
             <button className="btn-ghost" onClick={regenerate}>
-              Regenerate recovery codes
+              {t('account.regenCodes')}
             </button>
             <button className="btn-danger" onClick={disable}>
-              Disable two-factor
+              {t('account.disable2fa')}
             </button>
           </div>
         )}
@@ -195,9 +197,9 @@ export default function AccountPage() {
       {/* Sessions */}
       <section className="card space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Active sessions</h2>
+          <h2 className="font-semibold">{t('account.sessions')}</h2>
           <button className="btn-ghost px-2 py-1" onClick={revokeOthers}>
-            Sign out other sessions
+            {t('account.signoutOthers')}
           </button>
         </div>
         <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -205,16 +207,16 @@ export default function AccountPage() {
             <div key={s.id} className="flex items-center justify-between gap-2 py-2 text-sm">
               <div className="min-w-0">
                 <p className="truncate">
-                  {s.ip ?? 'unknown IP'}
-                  {s.current && <span className="ml-2 text-xs text-accent">this device</span>}
+                  {s.ip ?? t('account.unknownIp')}
+                  {s.current && <span className="ml-2 text-xs text-accent">{t('account.thisDevice')}</span>}
                 </p>
                 <p className="truncate text-xs text-neutral-400">
-                  {s.userAgent ?? 'unknown device'} · last seen {new Date(s.lastSeenAt).toLocaleString()}
+                  {s.userAgent ?? t('account.unknownDevice')} · {t('account.lastSeen', { date: new Date(s.lastSeenAt).toLocaleString() })}
                 </p>
               </div>
               {!s.current && (
                 <button className="btn-danger px-2 py-1" onClick={() => revoke(s.id)}>
-                  Revoke
+                  {t('account.revoke')}
                 </button>
               )}
             </div>
@@ -224,17 +226,16 @@ export default function AccountPage() {
 
       {/* Data & privacy (GDPR) */}
       <section className="card space-y-3">
-        <h2 className="font-semibold">Your data</h2>
+        <h2 className="font-semibold">{t('account.yourData')}</h2>
         <p className="text-sm text-neutral-500">
-          Download a copy of your account data, or permanently delete your account and all of
-          your files. Deletion cannot be undone.
+          {t('account.dataHint')}
         </p>
         <div className="flex gap-2">
           <a className="btn-ghost" href={`${API_URL}/account/export`}>
-            Export my data
+            {t('account.exportData')}
           </a>
           <button className="btn-danger" onClick={deleteAccount}>
-            Delete my account
+            {t('account.deleteAccount')}
           </button>
         </div>
       </section>

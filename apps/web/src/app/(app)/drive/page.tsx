@@ -39,6 +39,7 @@ import type { PublicFile, PublicFolder } from '@opencoperlock/shared/client';
 import { formatBytes } from '@opencoperlock/shared/client';
 import { api, API_URL, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useT } from '@/lib/i18n';
 import {
   checkVerifier,
   decryptBlob,
@@ -68,6 +69,7 @@ function passKey(spaceId: string) {
 
 export default function EspacesPage() {
   const { refresh } = useAuth();
+  const { t } = useT();
   const [allFolders, setAllFolders] = useState<PublicFolder[]>([]);
   const [activeSpaceId, setActiveSpaceId] = useState<string | null>(null);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
@@ -175,7 +177,7 @@ export default function EspacesPage() {
     const key = await deriveVaultKey(passInput, askPass.zkSalt);
     // Reject a wrong passphrase up-front instead of silently caching a bad key.
     if (askPass.zkVerifier && !(await checkVerifier(key, askPass.zkVerifier))) {
-      setPassError('Phrase de passe incorrecte.');
+      setPassError(t('drive.passphraseWrong'));
       return;
     }
     sessionStorage.setItem(passKey(askPass.id), passInput);
@@ -194,14 +196,14 @@ export default function EspacesPage() {
   }
 
   async function createSpace() {
-    const name = await prompt({ title: 'Nouvel espace', label: 'Nom de l’espace', placeholder: 'Documents…' });
+    const name = await prompt({ title: t('drive.newSpaceTitle'), label: t('drive.spaceNameLabel'), placeholder: t('drive.spaceNamePlaceholder') });
     if (!name) return;
     const kind = await choose<'normal' | 'secured'>({
-      title: 'Type d’espace',
-      message: 'Comment vos fichiers doivent-ils être protégés ?',
+      title: t('drive.spaceTypeTitle'),
+      message: t('drive.spaceTypeMsg'),
       options: [
-        { value: 'normal', label: 'Espace normal', description: 'Chiffré côté serveur · antivirus, partage, aperçu.' },
-        { value: 'secured', label: 'Espace sécurisé (Zero-Knowledge)', description: 'Chiffré dans le navigateur · le serveur est aveugle.' },
+        { value: 'normal', label: t('drive.spaceNormal'), description: t('drive.spaceNormalDesc') },
+        { value: 'secured', label: t('drive.spaceSecured'), description: t('drive.spaceSecuredDesc') },
       ],
     });
     if (!kind) return;
@@ -210,17 +212,16 @@ export default function EspacesPage() {
       // Set the vault passphrase now, with confirmation, and store a verifier so a wrong
       // passphrase is caught on unlock. The passphrase never leaves the browser.
       const pass = await prompt({
-        title: 'Phrase de passe du coffre',
-        message:
-          'Elle chiffre vos fichiers dans le navigateur et n’est jamais envoyée au serveur. Notez-la précieusement : elle est irrécupérable en cas d’oubli.',
-        label: 'Phrase de passe',
+        title: t('drive.vaultPassTitle'),
+        message: t('drive.vaultPassMsg'),
+        label: t('drive.vaultPassLabel'),
         password: true,
       });
       if (!pass) return;
-      const again = await prompt({ title: 'Confirmez la phrase de passe', label: 'Retapez-la', password: true });
+      const again = await prompt({ title: t('drive.vaultPassConfirmTitle'), label: t('drive.vaultPassConfirmLabel'), password: true });
       if (again === null) return;
       if (again !== pass) {
-        toast('Les phrases de passe ne correspondent pas.', 'error');
+        toast(t('drive.passMismatch'), 'error');
         return;
       }
       try {
@@ -235,9 +236,9 @@ export default function EspacesPage() {
         });
         sessionStorage.setItem(passKey(res.folder.id), pass);
         await loadFolders();
-        toast('Espace sécurisé créé', 'success');
+        toast(t('drive.securedSpaceCreated'), 'success');
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : 'Création impossible');
+        setError(err instanceof ApiError ? err.message : t('common.createFailed'));
       }
       return;
     }
@@ -245,20 +246,20 @@ export default function EspacesPage() {
     try {
       await api.post('/folders', { name, isZeroKnowledge: false });
       await loadFolders();
-      toast('Espace créé', 'success');
+      toast(t('drive.spaceCreated'), 'success');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Création impossible');
+      setError(err instanceof ApiError ? err.message : t('common.createFailed'));
     }
   }
 
   async function createFolder() {
-    const name = await prompt({ title: 'Nouveau dossier', label: 'Nom du dossier' });
+    const name = await prompt({ title: t('drive.newFolderTitle'), label: t('drive.folderNameLabel') });
     if (!name) return;
     try {
       await api.post('/folders', { name, parentId: currentFolderId, isZeroKnowledge: isZk });
       await loadFolders();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Création impossible');
+      setError(err instanceof ApiError ? err.message : t('common.createFailed'));
     }
   }
 
@@ -270,7 +271,7 @@ export default function EspacesPage() {
       if (isZk) {
         if (!vaultKey) return;
         for (let i = 0; i < arr.length; i += 1) {
-          setBusy(`Chiffrement ${i + 1}/${arr.length}…`);
+          setBusy(t('drive.encrypting', { i: i + 1, n: arr.length }));
           const enc = await encryptFile(vaultKey, arr[i]!);
           const form = new FormData();
           form.append(
@@ -288,7 +289,7 @@ export default function EspacesPage() {
         }
       } else {
         for (let i = 0; i < arr.length; i += 1) {
-          setBusy(`Envoi ${i + 1}/${arr.length}…`);
+          setBusy(t('drive.uploading', { i: i + 1, n: arr.length }));
           setProgress(0);
           const form = new FormData();
           form.append('file', arr[i]!);
@@ -296,9 +297,9 @@ export default function EspacesPage() {
         }
       }
       await Promise.all([loadItems(currentFolderId, isZk, vaultKey), refresh()]);
-      toast(`${arr.length} fichier${arr.length > 1 ? 's' : ''} importé${arr.length > 1 ? 's' : ''}`, 'success');
+      toast(arr.length > 1 ? t('drive.filesImportedMany', { n: arr.length }) : t('drive.filesImportedOne', { n: arr.length }), 'success');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Échec de l'envoi");
+      setError(err instanceof ApiError ? err.message : t('drive.uploadFailed'));
     } finally {
       setBusy(null);
       setProgress(null);
@@ -331,7 +332,7 @@ export default function EspacesPage() {
   }
 
   async function openZk(f: ZkFile) {
-    const name = f.plainName && !f.plainName.startsWith('🔒') ? f.plainName : 'fichier';
+    const name = f.plainName && !f.plainName.startsWith('🔒') ? f.plainName : t('drive.lockedFileName');
     try {
       const blob = await decryptZkBlob(f);
       if (!blob) return;
@@ -343,12 +344,12 @@ export default function EspacesPage() {
         onDownload: () => saveBlob(blob, name),
       });
     } catch {
-      toast('Déchiffrement impossible', 'error');
+      toast(t('drive.decryptFailed'), 'error');
     }
   }
 
   async function downloadZk(f: ZkFile) {
-    const name = f.plainName && !f.plainName.startsWith('🔒') ? f.plainName : 'fichier';
+    const name = f.plainName && !f.plainName.startsWith('🔒') ? f.plainName : t('drive.lockedFileName');
     const blob = await decryptZkBlob(f);
     if (blob) saveBlob(blob, name);
   }
@@ -358,68 +359,68 @@ export default function EspacesPage() {
   }
 
   async function deleteFile(id: string) {
-    if (!(await confirm({ title: 'Mettre ce fichier à la corbeille ?', confirmLabel: 'Mettre à la corbeille' }))) return;
+    if (!(await confirm({ title: t('drive.deleteFileTitle'), confirmLabel: t('drive.deleteToTrash') }))) return;
     await api.del(isZk ? `/zk/files/${id}` : `/files/${id}`);
     await reloadCurrent();
-    toast('Déplacé vers la corbeille', 'success');
+    toast(t('drive.movedToTrash'), 'success');
   }
   async function deleteFolder(id: string) {
-    if (!(await confirm({ title: 'Mettre ce dossier à la corbeille ?', message: 'Son contenu part aussi à la corbeille. Vous pourrez le restaurer.', confirmLabel: 'Mettre à la corbeille' }))) return;
+    if (!(await confirm({ title: t('drive.deleteFolderTitle'), message: t('drive.deleteFolderMsg'), confirmLabel: t('drive.deleteToTrash') }))) return;
     await api.del(`/folders/${id}`);
     await Promise.all([loadFolders(), refresh()]);
-    toast('Déplacé vers la corbeille', 'success');
+    toast(t('drive.movedToTrash'), 'success');
   }
   async function renameFile(f: PublicFile) {
-    const name = await prompt({ title: 'Renommer', label: 'Nouveau nom', defaultValue: f.name });
+    const name = await prompt({ title: t('drive.renameTitle'), label: t('drive.renameLabel'), defaultValue: f.name });
     if (!name || name === f.name) return;
     await api.patch(`/files/${f.id}`, { name });
     await reloadCurrent();
   }
   async function renameFolder(f: PublicFolder) {
-    const name = await prompt({ title: 'Renommer le dossier', label: 'Nouveau nom', defaultValue: f.name });
+    const name = await prompt({ title: t('drive.renameFolderTitle'), label: t('drive.renameLabel'), defaultValue: f.name });
     if (!name || name === f.name) return;
     await api.patch(`/folders/${f.id}`, { name });
     await loadFolders();
   }
   async function move(kind: 'file' | 'folder', id: string) {
     const targets = [
-      { id: null as string | null, name: 'Racine de l’espace' },
+      { id: null as string | null, name: t('drive.spaceRoot') },
       ...allFolders.filter((f) => f.id !== id && f.isZeroKnowledge === isZk),
     ];
     const dest = await choose<string | '__root__'>({
-      title: 'Déplacer vers',
-      options: targets.map((t) => ({ value: t.id ?? '__root__', label: t.name })),
+      title: t('drive.moveTitle'),
+      options: targets.map((tg) => ({ value: tg.id ?? '__root__', label: tg.name })),
     });
     if (dest === null) return;
     const target = dest === '__root__' ? null : dest;
     await api.patch(`/${kind}s/${id}`, { folderId: target, parentId: target });
     await Promise.all([loadFolders(), reloadCurrent()]);
-    toast('Déplacé', 'success');
+    toast(t('drive.moved'), 'success');
   }
   async function share(kind: 'file' | 'folder', id: string) {
     const accessMode = await choose<'PUBLIC' | 'CODE' | 'AUTHENTICATED'>({
-      title: 'Partager',
-      message: 'Qui peut ouvrir ce lien ?',
+      title: t('drive.shareTitle'),
+      message: t('drive.shareMsg'),
       options: [
-        { value: 'PUBLIC', label: 'Tout le monde', description: 'Toute personne disposant du lien.' },
-        { value: 'CODE', label: 'Avec un code', description: 'Lien + code d’accès requis.' },
-        { value: 'AUTHENTICATED', label: 'Comptes uniquement', description: 'Réservé aux utilisateurs connectés.' },
+        { value: 'PUBLIC', label: t('drive.shareEveryone'), description: t('drive.shareEveryoneDesc') },
+        { value: 'CODE', label: t('drive.shareCode'), description: t('drive.shareCodeDesc') },
+        { value: 'AUTHENTICATED', label: t('drive.shareAuth'), description: t('drive.shareAuthDesc') },
       ],
     });
     if (!accessMode) return;
     const viewType = await choose<'PAGE' | 'RAW'>({
-      title: 'Type de lien',
+      title: t('drive.linkTypeTitle'),
       options: [
-        { value: 'PAGE', label: 'Page d’aperçu', description: 'Page de présentation avec aperçu et téléchargement.' },
-        { value: 'RAW', label: 'Fichier brut', description: 'Ouvre directement le fichier.' },
+        { value: 'PAGE', label: t('drive.linkTypePage'), description: t('drive.linkTypePageDesc') },
+        { value: 'RAW', label: t('drive.linkTypeRaw'), description: t('drive.linkTypeRawDesc') },
       ],
     });
     if (!viewType) return;
     let code: string | undefined;
     if (accessMode === 'CODE') {
-      const entered = await prompt({ title: 'Code d’accès', label: 'Au moins 4 caractères', password: true });
+      const entered = await prompt({ title: t('drive.accessCodeTitle'), label: t('drive.accessCodeLabel'), password: true });
       if (!entered || entered.length < 4) {
-        toast('Code trop court', 'error');
+        toast(t('drive.codeTooShort'), 'error');
         return;
       }
       code = entered;
@@ -431,7 +432,7 @@ export default function EspacesPage() {
       await navigator.clipboard?.writeText(link).catch(() => {});
       setShareLink(link);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Partage impossible');
+      setError(err instanceof ApiError ? err.message : t('drive.shareFailed'));
     }
   }
   async function versions(f: PublicFile) {
@@ -440,12 +441,12 @@ export default function EspacesPage() {
         `/files/${f.id}/versions`,
       );
       if (res.versions.length === 0) {
-        toast('Aucune version antérieure pour ce fichier.', 'info');
+        toast(t('drive.noVersions'), 'info');
         return;
       }
       const pick = await choose<string>({
-        title: `Versions de ${f.name}`,
-        message: 'Choisissez une version à restaurer.',
+        title: t('drive.versionsTitle', { name: f.name }),
+        message: t('drive.versionsMsg'),
         options: res.versions.map((v) => ({
           value: v.id,
           label: new Date(v.createdAt).toLocaleString(),
@@ -455,9 +456,9 @@ export default function EspacesPage() {
       if (!pick) return;
       await api.post(`/files/${f.id}/versions/${pick}/restore`);
       await reloadCurrent();
-      toast('Version restaurée', 'success');
+      toast(t('drive.versionRestored'), 'success');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Versions indisponibles');
+      setError(err instanceof ApiError ? err.message : t('drive.versionsFailed'));
     }
   }
 
@@ -466,17 +467,17 @@ export default function EspacesPage() {
   if (!activeSpaceId) {
     return (
       <div className="space-y-6">
-        <Header title="Mes Espaces" subtitle="Vos dossiers chiffrés, normaux ou sécurisés.">
+        <Header title={t('drive.title')} subtitle={t('drive.subtitle')}>
           <button className="btn-primary" onClick={createSpace}>
-            <Plus size={16} /> Nouvel espace
+            <Plus size={16} /> {t('drive.newSpace')}
           </button>
         </Header>
         {error && <ErrorLine msg={error} />}
         {spaces.length === 0 ? (
           <Empty
             icon={FolderLock}
-            title="Aucun espace pour l’instant"
-            hint="Créez votre premier espace pour commencer à stocker des fichiers."
+            title={t('drive.noSpacesTitle')}
+            hint={t('drive.noSpacesHint')}
           />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -498,7 +499,7 @@ export default function EspacesPage() {
                 <div className="min-w-0">
                   <p className="truncate font-medium text-zinc-100">{s.name}</p>
                   <p className="text-xs text-zinc-500">
-                    {s.isZeroKnowledge ? 'Sécurisé · Zero-Knowledge' : 'Espace normal · chiffré serveur'}
+                    {s.isZeroKnowledge ? t('drive.secured') : t('drive.normalSpace')}
                   </p>
                 </div>
               </button>
@@ -517,7 +518,7 @@ export default function EspacesPage() {
       {/* breadcrumb */}
       <div className="flex flex-wrap items-center gap-1.5 text-sm text-zinc-500">
         <button className="flex items-center gap-1 hover:text-zinc-200" onClick={leaveSpace}>
-          <Home size={15} /> Espaces
+          <Home size={15} /> {t('drive.spaces')}
         </button>
         {breadcrumb.map((f, i) => (
           <span key={f.id} className="flex items-center gap-1.5">
@@ -534,8 +535,9 @@ export default function EspacesPage() {
 
       <Header
         title={activeSpace?.name ?? ''}
-        subtitle={isZk ? 'Dossier sécurisé · Zero-Knowledge' : 'Dossier chiffré côté serveur'}
+        subtitle={isZk ? t('drive.securedFolder') : t('drive.normalFolder')}
         badge={isZk ? 'secured' : undefined}
+        badgeLabel={t('drive.securedBadge')}
       >
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg border border-white/10 bg-white/[0.03] p-0.5">
@@ -543,14 +545,14 @@ export default function EspacesPage() {
             <ViewBtn active={view === 'grid'} onClick={() => setView('grid')} icon={LayoutGrid} />
           </div>
           <button className="btn-ghost" onClick={createFolder} disabled={needPass}>
-            <FolderPlus size={16} /> Dossier
+            <FolderPlus size={16} /> {t('drive.folder')}
           </button>
           <button
             className="btn-primary"
             onClick={() => fileInput.current?.click()}
             disabled={needPass || !!busy}
           >
-            <Upload size={16} /> {busy ?? 'Importer'}
+            <Upload size={16} /> {busy ?? t('drive.import')}
           </button>
           <input ref={fileInput} type="file" multiple className="hidden" onChange={(e) => onUpload(e.target.files)} />
         </div>
@@ -565,9 +567,9 @@ export default function EspacesPage() {
       )}
 
       {needPass ? (
-        <Empty icon={KeyRound} title="Espace verrouillé" hint="Entrez la phrase de passe de cet espace pour le déverrouiller.">
+        <Empty icon={KeyRound} title={t('drive.lockedTitle')} hint={t('drive.lockedHint')}>
           <button className="btn-primary" onClick={() => setAskPass(activeSpace)}>
-            <Lock size={16} /> Déverrouiller
+            <Lock size={16} /> {t('drive.unlock')}
           </button>
         </Empty>
       ) : (
@@ -587,7 +589,7 @@ export default function EspacesPage() {
           }}
         >
           {childFolders.length === 0 && files.length === 0 && zkFiles.length === 0 ? (
-            <Empty icon={Upload} title="Dossier vide" hint="Glissez-déposez des fichiers ici, ou utilisez Importer." />
+            <Empty icon={Upload} title={t('drive.emptyFolderTitle')} hint={t('drive.emptyFolderHint')} />
           ) : view === 'grid' ? (
             <div className="grid grid-cols-2 gap-3 p-2 sm:grid-cols-3 lg:grid-cols-4">
               {childFolders.map((f) => (
@@ -633,9 +635,9 @@ export default function EspacesPage() {
                   <RowActions>
                     <Menu
                       items={[
-                        { label: 'Renommer', icon: Pencil, onClick: () => renameFolder(f) },
-                        ...(!isZk ? [{ label: 'Partager', icon: Share2, onClick: () => share('folder', f.id) }] : []),
-                        { label: 'Supprimer', icon: Trash2, danger: true, onClick: () => deleteFolder(f.id) },
+                        { label: t('drive.actionRename'), icon: Pencil, onClick: () => renameFolder(f) },
+                        ...(!isZk ? [{ label: t('drive.actionShare'), icon: Share2, onClick: () => share('folder', f.id) }] : []),
+                        { label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => deleteFolder(f.id) },
                       ]}
                     />
                   </RowActions>
@@ -654,17 +656,17 @@ export default function EspacesPage() {
                       <span className="shrink-0 text-xs text-zinc-500">{formatBytes(f.sizeBytes)}</span>
                     </button>
                     <RowActions>
-                      <IconBtn title="Ouvrir" icon={Eye} onClick={() => openFile(f)} />
-                      <a className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100" title="Télécharger" href={api.url(`/files/${f.id}/download`)}>
+                      <IconBtn title={t('drive.open')} icon={Eye} onClick={() => openFile(f)} />
+                      <a className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100" title={t('drive.actionDownload')} href={api.url(`/files/${f.id}/download`)}>
                         <Download size={16} />
                       </a>
                       <Menu
                         items={[
-                          { label: 'Renommer', icon: Pencil, onClick: () => renameFile(f) },
-                          { label: 'Déplacer', icon: FolderInput, onClick: () => move('file', f.id) },
-                          { label: 'Partager', icon: Share2, onClick: () => share('file', f.id) },
-                          { label: 'Versions', icon: History, onClick: () => versions(f) },
-                          { label: 'Supprimer', icon: Trash2, danger: true, onClick: () => deleteFile(f.id) },
+                          { label: t('drive.actionRename'), icon: Pencil, onClick: () => renameFile(f) },
+                          { label: t('drive.actionMove'), icon: FolderInput, onClick: () => move('file', f.id) },
+                          { label: t('drive.actionShare'), icon: Share2, onClick: () => share('file', f.id) },
+                          { label: t('drive.actionVersions'), icon: History, onClick: () => versions(f) },
+                          { label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => deleteFile(f.id) },
                         ]}
                       />
                     </RowActions>
@@ -682,9 +684,9 @@ export default function EspacesPage() {
                     <span className="shrink-0 text-xs text-zinc-500">{formatBytes(f.sizeBytes)}</span>
                   </button>
                   <RowActions>
-                    <IconBtn title="Ouvrir" icon={Eye} onClick={() => openZk(f)} />
-                    <IconBtn title="Télécharger" icon={Download} onClick={() => downloadZk(f)} />
-                    <Menu items={[{ label: 'Supprimer', icon: Trash2, danger: true, onClick: () => deleteFile(f.id) }]} />
+                    <IconBtn title={t('drive.open')} icon={Eye} onClick={() => openZk(f)} />
+                    <IconBtn title={t('drive.actionDownload')} icon={Download} onClick={() => downloadZk(f)} />
+                    <Menu items={[{ label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => deleteFile(f.id) }]} />
                   </RowActions>
                 </div>
               ))}
@@ -702,13 +704,12 @@ export default function EspacesPage() {
                 <KeyRound size={20} />
               </span>
               <div>
-                <h3 className="font-semibold text-zinc-100">Espace sécurisé</h3>
+                <h3 className="font-semibold text-zinc-100">{t('drive.securedSpace')}</h3>
                 <p className="text-xs text-zinc-500">{askPass.name}</p>
               </div>
             </div>
             <p className="text-sm text-zinc-400">
-              Cette phrase de passe chiffre vos fichiers dans le navigateur. Le serveur ne la voit jamais — elle est
-              irrécupérable si vous l’oubliez.
+              {t('drive.passphraseExplain')}
             </p>
             <form
               onSubmit={(e) => {
@@ -721,7 +722,7 @@ export default function EspacesPage() {
                 className="input"
                 type="password"
                 autoFocus
-                placeholder="Phrase de passe"
+                placeholder={t('drive.passphrasePlaceholder')}
                 value={passInput}
                 onChange={(e) => {
                   setPassInput(e.target.value);
@@ -731,10 +732,10 @@ export default function EspacesPage() {
               {passError && <p className="text-sm text-red-300">{passError}</p>}
               <div className="flex justify-end gap-2">
                 <button type="button" className="btn-ghost" onClick={() => { setAskPass(null); setPassError(null); }}>
-                  Annuler
+                  {t('common.cancel')}
                 </button>
                 <button type="submit" className="btn-primary" disabled={!passInput}>
-                  Déverrouiller
+                  {t('drive.unlock')}
                 </button>
               </div>
             </form>
@@ -757,11 +758,13 @@ function Header({
   title,
   subtitle,
   badge,
+  badgeLabel,
   children,
 }: {
   title: string;
   subtitle?: string;
   badge?: 'secured';
+  badgeLabel?: string;
   children?: React.ReactNode;
 }) {
   return (
@@ -771,7 +774,7 @@ function Header({
           <h1 className="text-2xl font-semibold tracking-tight text-white">{title}</h1>
           {badge === 'secured' && (
             <span className="chip bg-accent-soft text-violet-300">
-              <ShieldCheck size={12} /> Sécurisé
+              <ShieldCheck size={12} /> {badgeLabel}
             </span>
           )}
         </div>
@@ -887,6 +890,7 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
 }
 
 function ShareLinkModal({ link, onClose }: { link: string; onClose: () => void }) {
+  const { t } = useT();
   const [copied, setCopied] = useState(false);
   return (
     <Modal onClose={onClose}>
@@ -896,8 +900,8 @@ function ShareLinkModal({ link, onClose }: { link: string; onClose: () => void }
             <Share2 size={20} />
           </span>
           <div>
-            <h3 className="font-semibold text-zinc-100">Lien de partage prêt</h3>
-            <p className="text-xs text-zinc-500">Copié dans le presse-papiers.</p>
+            <h3 className="font-semibold text-zinc-100">{t('drive.shareReady')}</h3>
+            <p className="text-xs text-zinc-500">{t('drive.shareCopied')}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -915,7 +919,7 @@ function ShareLinkModal({ link, onClose }: { link: string; onClose: () => void }
         </div>
         <div className="flex justify-end">
           <button className="btn-primary" onClick={onClose}>
-            Terminé
+            {t('common.done')}
           </button>
         </div>
       </div>

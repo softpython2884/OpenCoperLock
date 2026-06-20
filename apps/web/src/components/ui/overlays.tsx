@@ -17,6 +17,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Info, X } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 
 // ── Types ──────────────────────────────────────────────────────────────────--
 
@@ -155,6 +156,7 @@ function Shell({ children, onCancel }: { children: React.ReactNode; onCancel: ()
 }
 
 function DialogHost({ state, onClose }: { state: DialogState; onClose: () => void }) {
+  const { t } = useT();
   const [value, setValue] = useState(state.kind === 'prompt' ? (state.opts.defaultValue ?? '') : '');
 
   function finish(result: boolean | string | null | unknown) {
@@ -170,10 +172,10 @@ function DialogHost({ state, onClose }: { state: DialogState; onClose: () => voi
         {o.message && <p className="mt-1.5 whitespace-pre-line text-[13px] leading-relaxed text-zinc-400">{o.message}</p>}
         <div className="mt-[18px] flex justify-end gap-2">
           <button className={BTN_GHOST} onClick={() => finish(false)}>
-            {o.cancelLabel ?? 'Annuler'}
+            {o.cancelLabel ?? t('overlay.cancel')}
           </button>
           <button className={o.danger ? BTN_DANGER : BTN_PRIMARY} onClick={() => finish(true)} autoFocus>
-            {o.confirmLabel ?? 'Confirmer'}
+            {o.confirmLabel ?? t('overlay.confirm')}
           </button>
         </div>
       </Shell>
@@ -203,10 +205,10 @@ function DialogHost({ state, onClose }: { state: DialogState; onClose: () => voi
           />
           <div className="mt-[18px] flex justify-end gap-2">
             <button type="button" className={BTN_GHOST} onClick={() => finish(null)}>
-              Annuler
+              {t('overlay.cancel')}
             </button>
             <button type="submit" className={BTN_PRIMARY}>
-              {o.confirmLabel ?? 'Valider'}
+              {o.confirmLabel ?? t('overlay.validate')}
             </button>
           </div>
         </form>
@@ -236,7 +238,7 @@ function DialogHost({ state, onClose }: { state: DialogState; onClose: () => voi
       </div>
       <div className="mt-3.5 flex justify-end">
         <button className={BTN_GHOST} onClick={() => finish(null)}>
-          Annuler
+          {t('overlay.cancel')}
         </button>
       </div>
     </Shell>

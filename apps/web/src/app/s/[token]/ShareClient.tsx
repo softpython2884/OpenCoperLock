@@ -12,6 +12,7 @@ import { Download } from 'lucide-react';
 import type { PublicShareView, ShareEntry } from '@opencoperlock/shared/client';
 import { formatBytes } from '@opencoperlock/shared/client';
 import { API_URL, api, ApiError } from '@/lib/api';
+import { useT } from '@/lib/i18n';
 import { Wordmark } from '@/components/Wordmark';
 import { fileVisual } from '@/lib/fileType';
 
@@ -24,6 +25,7 @@ function fileUrl(token: string, fileId: string, opts: { inline?: boolean; code?:
 }
 
 export default function ShareClient({ token }: { token: string }) {
+  const { t } = useT();
   const [view, setView] = useState<PublicShareView | null>(null);
   const [code, setCode] = useState('');
   const [submittedCode, setSubmittedCode] = useState<string | undefined>(undefined);
@@ -37,13 +39,13 @@ export default function ShareClient({ token }: { token: string }) {
         const q = withCode ? `?code=${encodeURIComponent(withCode)}` : '';
         const res = await api.get<PublicShareView>(`/s/${token}${q}`);
         setView(res);
-        if (withCode && res.requiresCode) setError('Code incorrect.');
+        if (withCode && res.requiresCode) setError(t('share.codeIncorrect'));
       } catch (err) {
         if (err instanceof ApiError && err.status === 404) setNotFound(true);
-        else setError(err instanceof ApiError ? err.message : 'Impossible de charger ce lien');
+        else setError(err instanceof ApiError ? err.message : t('share.loadFailed'));
       }
     },
-    [token],
+    [token, t],
   );
 
   useEffect(() => {
@@ -57,15 +59,15 @@ export default function ShareClient({ token }: { token: string }) {
     }
   }, [view, token, submittedCode]);
 
-  if (notFound) return <Centered title="Lien introuvable" subtitle="Ce lien de partage est invalide ou a été révoqué." />;
-  if (!view) return <Centered title="Chargement…" />;
-  if (view.expired) return <Centered title="Lien expiré" subtitle="Ce partage n’est plus disponible." />;
+  if (notFound) return <Centered title={t('share.notFoundTitle')} subtitle={t('share.notFoundSubtitle')} />;
+  if (!view) return <Centered title={t('share.loading')} />;
+  if (view.expired) return <Centered title={t('share.expiredTitle')} subtitle={t('share.expiredSubtitle')} />;
 
   if (view.requiresAuth) {
     return (
-      <Centered title="Connexion requise" subtitle="Ce lien est réservé aux titulaires d’un compte.">
+      <Centered title={t('share.authTitle')} subtitle={t('share.authSubtitle')}>
         <a className="btn-primary" href="/login">
-          Se connecter
+          {t('share.signin')}
         </a>
       </Centered>
     );
@@ -73,7 +75,7 @@ export default function ShareClient({ token }: { token: string }) {
 
   if (view.requiresCode) {
     return (
-      <Centered title="Lien protégé" subtitle="Entrez le code pour accéder à ce partage.">
+      <Centered title={t('share.codeTitle')} subtitle={t('share.codeSubtitle')}>
         <form
           className="flex w-full max-w-xs flex-col gap-2"
           onSubmit={(e) => {
@@ -87,11 +89,11 @@ export default function ShareClient({ token }: { token: string }) {
             type="password"
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder="Code d’accès"
+            placeholder={t('share.codePlaceholder')}
             autoFocus
           />
           {error && <p className="text-sm text-red-300">{error}</p>}
-          <button className="btn-primary">Déverrouiller</button>
+          <button className="btn-primary">{t('share.unlock')}</button>
         </form>
       </Centered>
     );
@@ -104,7 +106,7 @@ export default function ShareClient({ token }: { token: string }) {
           <Link href="/" className="transition hover:opacity-80">
             <Wordmark />
           </Link>
-          <span className="text-xs text-zinc-500">Partage{view.isFolder ? ' de dossier' : ' de fichier'}</span>
+          <span className="text-xs text-zinc-500">{view.isFolder ? t('share.headerFolder') : t('share.headerFile')}</span>
         </header>
 
         {view.file && (
@@ -113,8 +115,8 @@ export default function ShareClient({ token }: { token: string }) {
 
         {view.entries && (
           <div className="space-y-3">
-            <h1 className="text-lg font-semibold text-white">Dossier partagé ({view.entries.length} fichiers)</h1>
-            {view.entries.length === 0 && <p className="text-sm text-zinc-500">Ce dossier est vide.</p>}
+            <h1 className="text-lg font-semibold text-white">{t('share.folderTitle', { count: view.entries.length })}</h1>
+            {view.entries.length === 0 && <p className="text-sm text-zinc-500">{t('share.folderEmpty')}</p>}
             {view.entries.map((entry) => (
               <FileCard key={entry.fileId} token={token} entry={entry} allowDownload={view.allowDownload} code={submittedCode} compact />
             ))}
@@ -123,7 +125,7 @@ export default function ShareClient({ token }: { token: string }) {
       </div>
 
       <footer className="border-t border-white/[0.06] px-4 py-4 text-center text-xs text-zinc-500">
-        Propulsé par <Wordmark className="!text-xs" /> ·{' '}
+        {t('share.poweredBy')} <Wordmark className="!text-xs" /> ·{' '}
         <a href="https://forgenet.fr" target="_blank" rel="noreferrer" className="text-violet-300 hover:underline">
           Forge Network
         </a>
@@ -145,6 +147,7 @@ function FileCard({
   code?: string;
   compact?: boolean;
 }) {
+  const { t } = useT();
   const v = fileVisual(entry.name, entry.mimeType);
   return (
     <div className="card space-y-3">
@@ -162,7 +165,7 @@ function FileCard({
         </div>
         {allowDownload && (
           <a className="btn-primary shrink-0 whitespace-nowrap" href={fileUrl(token, entry.fileId, { code })}>
-            <Download size={16} /> Télécharger
+            <Download size={16} /> {t('share.download')}
           </a>
         )}
       </div>
@@ -172,6 +175,7 @@ function FileCard({
 }
 
 function Preview({ token, entry, code }: { token: string; entry: ShareEntry; code?: string }) {
+  const { t } = useT();
   const url = fileUrl(token, entry.fileId, { inline: true, code });
   const [text, setText] = useState<string | null>(null);
 
@@ -198,10 +202,10 @@ function Preview({ token, entry, code }: { token: string; entry: ShareEntry; cod
       return text !== null ? (
         <pre className="max-h-[60vh] overflow-auto rounded-lg border border-white/10 bg-ink-900 p-3 text-xs text-zinc-300">{text}</pre>
       ) : (
-        <p className="text-sm text-zinc-500">Aperçu indisponible.</p>
+        <p className="text-sm text-zinc-500">{t('share.previewUnavailable')}</p>
       );
     default:
-      return <p className="text-sm text-zinc-500">Aucun aperçu disponible pour ce type de fichier.</p>;
+      return <p className="text-sm text-zinc-500">{t('share.noPreview')}</p>;
   }
 }
 

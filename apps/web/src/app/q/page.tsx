@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { UploadCloud, CheckCircle2 } from 'lucide-react';
 import { API_URL } from '@/lib/api';
+import { useT } from '@/lib/i18n';
 import { Logo } from '@/components/Logo';
 import { Wordmark } from '@/components/Wordmark';
 
@@ -13,6 +14,7 @@ import { Wordmark } from '@/components/Wordmark';
  * lands in the code owner's Fast-Upload folder.
  */
 export default function QuickUploadPage() {
+  const { t } = useT();
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [requiresPassword, setRequiresPassword] = useState(false);
@@ -29,12 +31,12 @@ export default function QuickUploadPage() {
     setStatus(null);
     try {
       const res = await fetch(`${API_URL}/quick/${encodeURIComponent(code.trim())}`);
-      if (!res.ok) throw new Error('Code introuvable ou expiré');
+      if (!res.ok) throw new Error(t('quick.codeNotFound'));
       const data = (await res.json()) as { requiresPassword: boolean };
       setRequiresPassword(data.requiresPassword);
       setValidated(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Code invalide');
+      setError(err instanceof Error ? err.message : t('quick.codeInvalid'));
       setValidated(false);
     }
   }
@@ -56,13 +58,13 @@ export default function QuickUploadPage() {
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          throw new Error(body.error ?? `Échec de l'envoi (${res.status})`);
+          throw new Error(body.error ?? t('quick.uploadFailedStatus', { status: res.status }));
         }
         count += 1;
       }
-      setStatus(`${count} fichier${count > 1 ? 's' : ''} envoyé${count > 1 ? 's' : ''}.`);
+      setStatus(count > 1 ? t('quick.sentMany', { count }) : t('quick.sentOne', { count }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Échec de l'envoi");
+      setError(err instanceof Error ? err.message : t('quick.uploadFailed'));
     } finally {
       setBusy(false);
       if (fileInput.current) fileInput.current.value = '';
@@ -75,9 +77,9 @@ export default function QuickUploadPage() {
         <div className="w-full max-w-md">
           <div className="mb-6 flex flex-col items-center gap-3 text-center">
             <Logo size={46} />
-            <h1 className="text-xl font-semibold text-white">Quick-Upload</h1>
+            <h1 className="text-xl font-semibold text-white">{t('quick.title')}</h1>
             <p className="text-sm text-zinc-500">
-              Entrez un code actif pour ouvrir une zone de dépôt temporaire.
+              {t('quick.subtitle')}
             </p>
           </div>
 
@@ -86,18 +88,18 @@ export default function QuickUploadPage() {
               <form onSubmit={check} className="space-y-3">
                 <input
                   className="input text-center font-mono text-lg uppercase tracking-[0.3em]"
-                  placeholder="CODE"
+                  placeholder={t('quick.codePlaceholder')}
                   value={code}
                   onChange={(e) => setCode(e.target.value.toUpperCase())}
                   required
                 />
-                <button className="btn-primary w-full">Continuer</button>
+                <button className="btn-primary w-full">{t('quick.continue')}</button>
               </form>
             ) : (
               <div className="space-y-3">
                 {requiresPassword && (
                   <div>
-                    <label className="label">Mot de passe de la zone</label>
+                    <label className="label">{t('quick.areaPassword')}</label>
                     <input
                       className="input"
                       type="password"
@@ -125,7 +127,7 @@ export default function QuickUploadPage() {
                   } disabled:opacity-60`}
                 >
                   <UploadCloud size={26} className="text-violet-300" />
-                  {busy ? 'Envoi…' : 'Glissez vos fichiers ici, ou cliquez pour choisir'}
+                  {busy ? t('quick.uploading') : t('quick.dropHint')}
                 </button>
                 <input
                   ref={fileInput}
@@ -135,7 +137,7 @@ export default function QuickUploadPage() {
                   onChange={(e) => upload(e.target.files)}
                 />
                 <button className="btn-ghost w-full" onClick={() => setValidated(false)}>
-                  Utiliser un autre code
+                  {t('quick.useAnotherCode')}
                 </button>
               </div>
             )}
@@ -150,14 +152,14 @@ export default function QuickUploadPage() {
 
           <p className="mt-4 text-center text-sm text-zinc-500">
             <Link href="/login" className="text-violet-300 hover:underline">
-              Retour à la connexion
+              {t('quick.backToLogin')}
             </Link>
           </p>
         </div>
       </div>
 
       <footer className="border-t border-white/[0.06] px-4 py-4 text-center text-xs text-zinc-500">
-        Propulsé par <Wordmark className="!text-xs" /> ·{' '}
+        {t('quick.poweredBy')} <Wordmark className="!text-xs" /> ·{' '}
         <a href="https://forgenet.fr" target="_blank" rel="noreferrer" className="text-violet-300 hover:underline">
           Forge Network
         </a>

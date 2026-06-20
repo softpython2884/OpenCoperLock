@@ -4,8 +4,10 @@ import { useCallback, useEffect, useState } from 'react';
 import type { PublicRemoteJob } from '@opencoperlock/shared/client';
 import { formatBytes } from '@opencoperlock/shared/client';
 import { api, ApiError } from '@/lib/api';
+import { useT } from '@/lib/i18n';
 
 export default function RemotePage() {
+  const { t } = useT();
   const [url, setUrl] = useState('');
   const [jobs, setJobs] = useState<PublicRemoteJob[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +39,7 @@ export default function RemotePage() {
       setUrl('');
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to enqueue');
+      setError(err instanceof ApiError ? err.message : t('remote.enqueueFailed'));
     } finally {
       setBusy(false);
     }
@@ -46,11 +48,11 @@ export default function RemotePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-white">Remote-Upload</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-white">{t('remote.title')}</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Collez un lien : le serveur le télécharge directement (votre connexion reste libre).
-          Les fichiers sont analysés et chiffrés au repos, puis rangés dans votre dossier{' '}
-          <span className="font-medium text-zinc-300">Remote-Upload</span>.
+          {t('remote.subtitlePre')}{' '}
+          <span className="font-medium text-zinc-300">{t('remote.subtitleFolder')}</span>
+          {t('remote.subtitlePost')}
         </p>
       </div>
 
@@ -59,22 +61,22 @@ export default function RemotePage() {
           <input
             className="input"
             type="url"
-            placeholder="https://example.com/gros-fichier.zip"
+            placeholder={t('remote.placeholder')}
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             required
           />
           <button className="btn-primary whitespace-nowrap" disabled={busy}>
-            {busy ? 'En file…' : 'Télécharger'}
+            {busy ? t('remote.enqueueing') : t('remote.download')}
           </button>
         </form>
         {error && <p className="mt-2 text-sm text-red-300">{error}</p>}
       </div>
 
       <div>
-        <h2 className="mb-2 text-sm font-medium text-zinc-400">Tâches</h2>
+        <h2 className="mb-2 text-sm font-medium text-zinc-400">{t('remote.jobs')}</h2>
         {jobs.length === 0 ? (
-          <div className="card py-10 text-center text-sm text-zinc-500">Aucun téléchargement distant pour l’instant.</div>
+          <div className="card py-10 text-center text-sm text-zinc-500">{t('remote.noJobs')}</div>
         ) : (
           <div className="space-y-2">
             {jobs.map((job) => (
@@ -85,7 +87,7 @@ export default function RemotePage() {
                 </div>
                 <div className="flex shrink-0 items-center gap-3 whitespace-nowrap text-xs">
                   {job.sizeBytes != null && <span className="text-zinc-500">{formatBytes(job.sizeBytes)}</span>}
-                  <JobStatus status={job.status} />
+                  <JobStatus status={job.status} t={t} />
                 </div>
               </div>
             ))}
@@ -96,7 +98,7 @@ export default function RemotePage() {
   );
 }
 
-function JobStatus({ status }: { status: PublicRemoteJob['status'] }) {
+function JobStatus({ status, t }: { status: PublicRemoteJob['status']; t: (key: string) => string }) {
   const map: Record<PublicRemoteJob['status'], string> = {
     QUEUED: 'bg-white/[0.06] text-zinc-400',
     RUNNING: 'bg-amber-500/10 text-amber-300',
@@ -104,10 +106,10 @@ function JobStatus({ status }: { status: PublicRemoteJob['status'] }) {
     FAILED: 'bg-red-500/10 text-red-300',
   };
   const label: Record<PublicRemoteJob['status'], string> = {
-    QUEUED: 'En file',
-    RUNNING: 'En cours',
-    DONE: 'Terminé',
-    FAILED: 'Échec',
+    QUEUED: t('remote.statusQueued'),
+    RUNNING: t('remote.statusRunning'),
+    DONE: t('remote.statusDone'),
+    FAILED: t('remote.statusFailed'),
   };
   return <span className={`rounded px-2 py-0.5 font-medium uppercase tracking-wide ${map[status]}`}>{label[status]}</span>;
 }

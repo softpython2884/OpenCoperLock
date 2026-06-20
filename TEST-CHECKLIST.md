@@ -5,7 +5,7 @@
 > This file is the concise per-feature reference.
 
 This sheet tracks what to verify after the current round of work. It is filled in as
-features land. Branch: `claude/opencoplerlock-cloud-toolkit-ofdqng`.
+features land. Branch: `main`.
 
 How to run locally:
 

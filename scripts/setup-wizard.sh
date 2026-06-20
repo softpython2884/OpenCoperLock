@@ -64,13 +64,16 @@ if command -v apt-get >/dev/null 2>&1; then PKG='apt'; fi
 ID_LIKE=''; [[ -f /etc/os-release ]] && ID_LIKE="$(. /etc/os-release; echo "${ID:-} ${ID_LIKE:-}")"
 
 clear || true
-say "${BOLD}${BLU}"
-say "   ____                   ____                       __                  __  "
-say "  / __ \\\\ ___  ___  ___   / ___\\\\___  ___  ___ ____  / /  ___  ____ ___ / /__"
-say " / /_/ // _ \\\\/ -_)/ _ \\\\ / /__ / _ \\\\/ _ \\\\/ -_) __/ / /__/ _ \\\\/ __// _ // / -_)"
-say " \\\\____// .__/\\\\__//_//_/ \\\\___/ \\\\___/ .__/\\\\__/_/   /____/\\\\___/\\\\__/ \\\\_,_//_/\\\\__/ "
-say "      /_/                          /_/                                       "
-say "${RST}"
+printf '%s' "${BOLD}${BLU}"
+cat <<'BANNER'
+   ___                     ____                          __                  __
+  / _ \  _ __   ___  _ __ / ___|___   _ __   ___  _ __  / /  ___    ___ | | __
+ | | | || '_ \ / _ \| '_ \| |   / _ \ | '_ \ / _ \| '__|/ /  / _ \  / __|| |/ /
+ | |_| || |_) |  __/| | | | |__| (_) || |_) |  __/| |  / /__| (_) || (__ |   <
+  \___/ | .__/ \___||_| |_|\____\___/ | .__/ \___||_|  \____/\___/  \___||_|\_\
+        |_|                           |_|
+BANNER
+printf '%s\n' "${RST}"
 say "${BOLD}OpenCoperLock setup wizard${RST} — dedicated-server install (PM2 + nginx + TLS)"
 hr
 [[ "$PKG" == apt ]] || warn "Non-Debian system detected ($ID_LIKE). Package installs are skipped; install prerequisites yourself."

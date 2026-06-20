@@ -370,6 +370,28 @@ export default function EspacesPage() {
     await Promise.all([loadFolders(), refresh()]);
     toast(t('drive.movedToTrash'), 'success');
   }
+  // Deleting a whole space is high-stakes, so we require the user to type its exact name.
+  async function deleteSpace(space: PublicFolder) {
+    const typed = await prompt({
+      title: t('drive.deleteSpaceTitle'),
+      message: t('drive.deleteSpaceMsg', { name: space.name }),
+      label: t('drive.deleteSpaceLabel', { name: space.name }),
+      placeholder: space.name,
+      confirmLabel: t('drive.deleteSpaceConfirm'),
+    });
+    if (typed === null) return;
+    if (typed.trim() !== space.name) {
+      toast(t('drive.deleteSpaceMismatch'), 'error');
+      return;
+    }
+    try {
+      await api.del(`/folders/${space.id}`);
+      await Promise.all([loadFolders(), refresh()]);
+      toast(t('drive.movedToTrash'), 'success');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('common.opFailed'));
+    }
+  }
   async function renameFile(f: PublicFile) {
     const name = await prompt({ title: t('drive.renameTitle'), label: t('drive.renameLabel'), defaultValue: f.name });
     if (!name || name === f.name) return;
@@ -482,27 +504,35 @@ export default function EspacesPage() {
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {spaces.map((s) => (
-              <button
+              <div
                 key={s.id}
-                onClick={() => enterSpace(s)}
-                className="card group flex items-center gap-4 text-left transition hover:border-accent/40 hover:bg-white/[0.04]"
+                className="card group relative flex items-center gap-4 text-left transition hover:border-accent/40 hover:bg-white/[0.04]"
               >
-                <span
-                  className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl ${
-                    s.isZeroKnowledge
-                      ? 'bg-gradient-to-br from-violet-500/30 to-fuchsia-500/20 text-violet-200'
-                      : 'bg-white/[0.05] text-zinc-300'
-                  }`}
-                >
-                  {s.isZeroKnowledge ? <ShieldCheck size={22} /> : <Folder size={22} />}
-                </span>
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-zinc-100">{s.name}</p>
-                  <p className="text-xs text-zinc-500">
-                    {s.isZeroKnowledge ? t('drive.secured') : t('drive.normalSpace')}
-                  </p>
+                <button onClick={() => enterSpace(s)} className="flex min-w-0 flex-1 items-center gap-4 text-left">
+                  <span
+                    className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl ${
+                      s.isZeroKnowledge
+                        ? 'bg-gradient-to-br from-violet-500/30 to-fuchsia-500/20 text-violet-200'
+                        : 'bg-white/[0.05] text-zinc-300'
+                    }`}
+                  >
+                    {s.isZeroKnowledge ? <ShieldCheck size={22} /> : <Folder size={22} />}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-zinc-100">{s.name}</p>
+                    <p className="text-xs text-zinc-500">
+                      {s.isZeroKnowledge ? t('drive.secured') : t('drive.normalSpace')}
+                    </p>
+                  </div>
+                </button>
+                <div className="shrink-0">
+                  <Menu
+                    items={[
+                      { label: t('drive.deleteSpaceAction'), icon: Trash2, danger: true, onClick: () => deleteSpace(s) },
+                    ]}
+                  />
                 </div>
-              </button>
+              </div>
             ))}
           </div>
         )}

@@ -92,6 +92,14 @@ const fr: Dict = {
   'drive.passMismatch': 'Les phrases de passe ne correspondent pas.',
   'drive.securedSpaceCreated': 'Espace sécurisé créé',
   'drive.spaceCreated': 'Espace créé',
+  // drive: delete space (typed verification)
+  'drive.deleteSpaceAction': 'Supprimer l’espace',
+  'drive.deleteSpaceTitle': 'Supprimer l’espace ?',
+  'drive.deleteSpaceMsg':
+    'Tout le contenu de « {name} » partira à la corbeille (récupérable un temps). Pour confirmer, saisissez le nom de l’espace ci-dessous.',
+  'drive.deleteSpaceLabel': 'Tapez « {name} » pour confirmer',
+  'drive.deleteSpaceConfirm': 'Supprimer l’espace',
+  'drive.deleteSpaceMismatch': 'Le nom saisi ne correspond pas.',
   // drive: create folder
   'drive.newFolderTitle': 'Nouveau dossier',
   'drive.folderNameLabel': 'Nom du dossier',
@@ -432,6 +440,13 @@ const en: Dict = {
   'drive.passMismatch': 'The passphrases do not match.',
   'drive.securedSpaceCreated': 'Secured space created',
   'drive.spaceCreated': 'Space created',
+  'drive.deleteSpaceAction': 'Delete space',
+  'drive.deleteSpaceTitle': 'Delete this space?',
+  'drive.deleteSpaceMsg':
+    'Everything in “{name}” will be moved to the Trash (recoverable for a while). To confirm, type the space name below.',
+  'drive.deleteSpaceLabel': 'Type “{name}” to confirm',
+  'drive.deleteSpaceConfirm': 'Delete space',
+  'drive.deleteSpaceMismatch': 'The name you typed does not match.',
   'drive.newFolderTitle': 'New folder',
   'drive.folderNameLabel': 'Folder name',
   'drive.encrypting': 'Encrypting {i}/{n}…',

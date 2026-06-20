@@ -39,6 +39,7 @@ export function toPublicFolder(f: Folder): PublicFolder {
     parentId: f.parentId,
     isZeroKnowledge: f.isZeroKnowledge,
     zkSalt: f.zkSalt,
+    zkVerifier: f.zkVerifier,
     createdAt: f.createdAt.toISOString(),
   };
 }

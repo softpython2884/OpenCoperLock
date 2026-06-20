@@ -57,6 +57,34 @@ export async function deriveVaultKey(passphrase: string, zkSalt: string | null):
   );
 }
 
+/** A fresh, non-secret per-vault salt (hex) generated client-side at vault creation. */
+export function randomSalt(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// A constant encrypted under the vault key to form a "key check value": decrypting it back
+// to this exact string proves the passphrase is correct, without revealing anything.
+const VERIFIER_TOKEN = 'opencoperlock.zk.verify.v1';
+
+/** Build the passphrase verifier stored with a new vault (iv.ciphertext, base64). */
+export async function makeVerifier(vaultKey: CryptoKey): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, vaultKey, enc.encode(VERIFIER_TOKEN));
+  return `${toB64(iv.buffer)}.${toB64(ct)}`;
+}
+
+/** True when `vaultKey` correctly decrypts the stored verifier (i.e. the passphrase matches). */
+export async function checkVerifier(vaultKey: CryptoKey, verifier: string): Promise<boolean> {
+  try {
+    const [ivB64, ctB64] = verifier.split('.');
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(ivB64!) }, vaultKey, fromB64(ctB64!));
+    return dec.decode(plain) === VERIFIER_TOKEN;
+  } catch {
+    return false;
+  }
+}
+
 export interface EncryptedUpload {
   blob: Blob;
   encryptedName: string;

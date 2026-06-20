@@ -102,7 +102,7 @@ export async function getRemoteVersion(env: Env): Promise<RemoteVersion | null> 
   try {
     const res = await fetch(
       `https://api.github.com/repos/${env.GITHUB_REPO}/commits/${encodeURIComponent(env.UPDATE_BRANCH)}`,
-      { headers, signal: AbortSignal.timeout(8000) },
+      { headers, signal: AbortSignal.timeout(12000) },
     );
     if (!res.ok) return null;
     const c = (await res.json()) as GithubCommit;
@@ -129,7 +129,7 @@ export async function commitsBehind(env: Env, base: string, head: string): Promi
   try {
     const res = await fetch(
       `https://api.github.com/repos/${env.GITHUB_REPO}/compare/${base}...${head}`,
-      { headers, signal: AbortSignal.timeout(8000) },
+      { headers, signal: AbortSignal.timeout(12000) },
     );
     if (!res.ok) return null;
     const data = (await res.json()) as { ahead_by?: number };

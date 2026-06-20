@@ -51,8 +51,11 @@ export const folderRoutes: FastifyPluginAsync = async (app) => {
           parentId: body.parentId ?? null,
           name: body.name,
           isZeroKnowledge: isZk,
-          // Fresh per-vault salt so each vault's passphrase derivation is independent.
-          zkSalt: isZk ? randomToken(16) : null,
+          // Per-vault salt: prefer the client's (so it can derive the key before the round-trip),
+          // else a fresh server one. Independent per vault either way.
+          zkSalt: isZk ? (body.zkSalt ?? randomToken(16)) : null,
+          // Passphrase verifier supplied by the client (so unlock can detect a wrong passphrase).
+          zkVerifier: isZk ? (body.zkVerifier ?? null) : null,
         },
       });
       await audit(req, 'folder.create', { target: folder.id });

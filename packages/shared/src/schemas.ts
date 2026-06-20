@@ -57,6 +57,11 @@ export const createFolderSchema = z.object({
   name: folderNameSchema,
   parentId: cuidSchema.nullable().optional(),
   isZeroKnowledge: z.boolean().optional().default(false),
+  // Client-generated per-vault salt (hex) for a new ZK vault; the server falls back to its
+  // own random salt if omitted. Ignored for normal folders.
+  zkSalt: z.string().min(8).max(128).optional(),
+  // Opaque passphrase verifier (iv.ciphertext) for a new ZK vault; ignored for normal folders.
+  zkVerifier: z.string().max(1024).optional(),
 });
 export type CreateFolderInput = z.infer<typeof createFolderSchema>;
 

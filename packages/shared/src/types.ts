@@ -28,6 +28,8 @@ export interface PublicFolder {
   isZeroKnowledge: boolean;
   /** Per-vault PBKDF2 salt for ZK folders (null for normal folders / legacy vaults). */
   zkSalt: string | null;
+  /** Opaque passphrase verifier for ZK vaults (null for normal folders / legacy vaults). */
+  zkVerifier: string | null;
   createdAt: string;
 }
 

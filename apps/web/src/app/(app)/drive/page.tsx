@@ -39,7 +39,15 @@ import type { PublicFile, PublicFolder } from '@opencoperlock/shared/client';
 import { formatBytes } from '@opencoperlock/shared/client';
 import { api, API_URL, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { decryptBlob, decryptName, deriveVaultKey, encryptFile } from '@/lib/zk';
+import {
+  checkVerifier,
+  decryptBlob,
+  decryptName,
+  deriveVaultKey,
+  encryptFile,
+  makeVerifier,
+  randomSalt,
+} from '@/lib/zk';
 import { fileVisual } from '@/lib/fileType';
 import { FileViewer, type ViewerSource } from '@/components/FileViewer';
 import { Menu } from '@/components/ui/Menu';
@@ -78,6 +86,7 @@ export default function EspacesPage() {
   // passphrase prompt
   const [askPass, setAskPass] = useState<PublicFolder | null>(null);
   const [passInput, setPassInput] = useState('');
+  const [passError, setPassError] = useState<string | null>(null);
 
   const spaces = useMemo(() => allFolders.filter((f) => f.parentId === null), [allFolders]);
   const activeSpace = useMemo(
@@ -147,21 +156,33 @@ export default function EspacesPage() {
     if (space.isZeroKnowledge) {
       const cached = sessionStorage.getItem(passKey(space.id));
       if (cached) {
-        setVaultKey(await deriveVaultKey(cached, space.zkSalt));
-      } else {
-        setPassInput('');
-        setAskPass(space);
+        const key = await deriveVaultKey(cached, space.zkSalt);
+        // Trust the cache only if it still matches the vault's verifier (legacy vaults have none).
+        if (!space.zkVerifier || (await checkVerifier(key, space.zkVerifier))) {
+          setVaultKey(key);
+          return;
+        }
+        sessionStorage.removeItem(passKey(space.id));
       }
+      setPassInput('');
+      setPassError(null);
+      setAskPass(space);
     }
   }
 
   async function submitPassphrase() {
     if (!askPass || !passInput) return;
     const key = await deriveVaultKey(passInput, askPass.zkSalt);
+    // Reject a wrong passphrase up-front instead of silently caching a bad key.
+    if (askPass.zkVerifier && !(await checkVerifier(key, askPass.zkVerifier))) {
+      setPassError('Phrase de passe incorrecte.');
+      return;
+    }
     sessionStorage.setItem(passKey(askPass.id), passInput);
     setVaultKey(key);
     setAskPass(null);
     setPassInput('');
+    setPassError(null);
   }
 
   function leaveSpace() {
@@ -184,8 +205,45 @@ export default function EspacesPage() {
       ],
     });
     if (!kind) return;
+
+    if (kind === 'secured') {
+      // Set the vault passphrase now, with confirmation, and store a verifier so a wrong
+      // passphrase is caught on unlock. The passphrase never leaves the browser.
+      const pass = await prompt({
+        title: 'Phrase de passe du coffre',
+        message:
+          'Elle chiffre vos fichiers dans le navigateur et n’est jamais envoyée au serveur. Notez-la précieusement : elle est irrécupérable en cas d’oubli.',
+        label: 'Phrase de passe',
+        password: true,
+      });
+      if (!pass) return;
+      const again = await prompt({ title: 'Confirmez la phrase de passe', label: 'Retapez-la', password: true });
+      if (again === null) return;
+      if (again !== pass) {
+        toast('Les phrases de passe ne correspondent pas.', 'error');
+        return;
+      }
+      try {
+        const salt = randomSalt();
+        const key = await deriveVaultKey(pass, salt);
+        const verifier = await makeVerifier(key);
+        const res = await api.post<{ folder: PublicFolder }>('/folders', {
+          name,
+          isZeroKnowledge: true,
+          zkSalt: salt,
+          zkVerifier: verifier,
+        });
+        sessionStorage.setItem(passKey(res.folder.id), pass);
+        await loadFolders();
+        toast('Espace sécurisé créé', 'success');
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : 'Création impossible');
+      }
+      return;
+    }
+
     try {
-      await api.post('/folders', { name, isZeroKnowledge: kind === 'secured' });
+      await api.post('/folders', { name, isZeroKnowledge: false });
       await loadFolders();
       toast('Espace créé', 'success');
     } catch (err) {
@@ -665,10 +723,14 @@ export default function EspacesPage() {
                 autoFocus
                 placeholder="Phrase de passe"
                 value={passInput}
-                onChange={(e) => setPassInput(e.target.value)}
+                onChange={(e) => {
+                  setPassInput(e.target.value);
+                  if (passError) setPassError(null);
+                }}
               />
+              {passError && <p className="text-sm text-red-300">{passError}</p>}
               <div className="flex justify-end gap-2">
-                <button type="button" className="btn-ghost" onClick={() => setAskPass(null)}>
+                <button type="button" className="btn-ghost" onClick={() => { setAskPass(null); setPassError(null); }}>
                   Annuler
                 </button>
                 <button type="submit" className="btn-primary" disabled={!passInput}>

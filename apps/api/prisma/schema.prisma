@@ -113,6 +113,10 @@ model Folder {
   // Per-vault random salt for the client's PBKDF2 key derivation (ZK folders only).
   // Not secret; storing it per vault defeats cross-vault precomputation. null = legacy.
   zkSalt          String?
+  // Opaque "key check value": a constant encrypted client-side with the vault key when the
+  // vault is created. The client decrypts it on unlock to confirm the passphrase is correct
+  // (so a typo is caught immediately instead of corrupting uploads). null = legacy vault.
+  zkVerifier      String?
   // Soft-delete: when set, the folder is in the Trash (hidden from the Drive) until it is
   // restored or purged. Trashing a folder cascades this timestamp to its whole subtree.
   deletedAt       DateTime?

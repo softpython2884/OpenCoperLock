@@ -313,6 +313,13 @@ export default function EspacesPage() {
       mime: f.mimeType,
       sizeBytes: f.sizeBytes,
       url: api.url(`/files/${f.id}/download`),
+      // Editing a text file re-uploads it under the same name → kept as a new version.
+      onSave: async (text: string) => {
+        const form = new FormData();
+        form.append('file', new File([text], f.name, { type: f.mimeType || 'text/plain' }));
+        await api.upload(`/files?folderId=${f.folderId ?? currentFolderId ?? ''}`, form);
+        await reloadCurrent();
+      },
     });
   }
 
@@ -342,6 +349,16 @@ export default function EspacesPage() {
         sizeBytes: f.sizeBytes,
         blob,
         onDownload: () => saveBlob(blob, name),
+        // Editing re-encrypts the new contents (same name) and replaces the vault file in place.
+        onSave: async (text: string) => {
+          if (!vaultKey) return;
+          const enc = await encryptFile(vaultKey, new File([text], name, { type: 'text/plain' }));
+          const form = new FormData();
+          form.append('meta', JSON.stringify({ encryptedName: enc.encryptedName, iv: enc.iv, wrappedKey: enc.wrappedKey }));
+          form.append('file', enc.blob, 'blob');
+          await api.upload(`/zk/files/${f.id}`, form, 'PUT');
+          await reloadCurrent();
+        },
       });
     } catch {
       toast(t('drive.decryptFailed'), 'error');

@@ -81,6 +81,38 @@ export function fileVisual(name: string, mime?: string): FileVisual {
   return { Icon: File, color: 'text-zinc-400', bg: 'bg-white/[0.06]', label: 'Fichier' };
 }
 
+/** True for Markdown files, which the viewer renders with formatting. */
+export function isMarkdown(name: string, mime?: string): boolean {
+  const e = ext(name);
+  return ['md', 'markdown', 'mdown', 'mkd', 'mdx'].includes(e) || (mime ?? '').includes('markdown');
+}
+
+/** Map a filename to a highlight.js language hint (empty = let it auto-detect). */
+export function codeLanguage(name: string): string {
+  const e = ext(name);
+  const map: Record<string, string> = {
+    js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
+    ts: 'typescript', tsx: 'typescript', py: 'python', rb: 'ruby', go: 'go', rs: 'rust',
+    java: 'java', c: 'c', h: 'c', cpp: 'cpp', cs: 'csharp', php: 'php', swift: 'swift',
+    kt: 'kotlin', sh: 'bash', bash: 'bash', zsh: 'bash', yml: 'yaml', yaml: 'yaml',
+    json: 'json', html: 'xml', xml: 'xml', css: 'css', scss: 'scss', sql: 'sql',
+    toml: 'ini', ini: 'ini', dockerfile: 'dockerfile', diff: 'diff', patch: 'diff',
+  };
+  return map[e] ?? '';
+}
+
+/** Editable plain-text files (so the viewer can offer an in-app editor). */
+export function isEditableText(name: string, mime?: string): boolean {
+  const e = ext(name);
+  const m = (mime ?? '').toLowerCase();
+  return (
+    m.startsWith('text/') ||
+    m === 'application/json' ||
+    CODE_EXTS.has(e) ||
+    ['txt', 'md', 'markdown', 'log', 'csv', 'ini', 'conf', 'env'].includes(e)
+  );
+}
+
 /** Coarse preview category used by the in-app viewer. */
 export type PreviewKind = 'image' | 'pdf' | 'audio' | 'video' | 'text' | 'none';
 

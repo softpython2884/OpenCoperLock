@@ -142,6 +142,69 @@ export const zkRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
+  // PUT /zk/files/:id — replace a vault file's contents in place (in-app editor save).
+  // Same multipart shape as upload, minus folderId; keeps the same file id and re-points it at
+  // the new ciphertext, adjusting quota by the size delta.
+  app.put('/files/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const existing = await prisma.fileObject.findFirst({
+      where: { id, ownerId: req.user!.id, encMode: 'ZK', deletedAt: null },
+    });
+    if (!existing) return reply.code(404).send({ error: 'File not found' });
+
+    const data = await req.file();
+    if (!data) return reply.code(400).send({ error: 'No file provided' });
+    const metaRaw = (data.fields?.meta as { value?: string } | undefined)?.value;
+    let meta: { encryptedName?: unknown; iv?: unknown; wrappedKey?: unknown };
+    try {
+      meta = JSON.parse(metaRaw ?? '');
+    } catch {
+      data.file.resume();
+      return reply.code(400).send({ error: 'Invalid meta JSON' });
+    }
+    if (typeof meta.encryptedName !== 'string' || typeof meta.iv !== 'string' || typeof meta.wrappedKey !== 'string') {
+      data.file.resume();
+      return reply.code(400).send({ error: 'Invalid ZK metadata' });
+    }
+
+    // Replacing frees the old blob, so the new one may be up to (remaining + old size).
+    const allowance = (await remainingAllowance(req.user!.id)) + Number(existing.sizeBytes);
+    if (allowance <= 0) {
+      data.file.resume();
+      return reply.code(413).send({ error: 'Storage quota exhausted' });
+    }
+
+    const newKey = newStorageKey();
+    try {
+      const { bytesWritten } = await app.ctx.storage.write(newKey, capStream(data.file, allowance));
+      if (bytesWritten === 0) {
+        await app.ctx.storage.delete(newKey).catch(() => {});
+        return reply.code(400).send({ error: 'Empty file' });
+      }
+      const oldKey = existing.storageKey;
+      await prisma.fileObject.update({
+        where: { id },
+        data: {
+          storageKey: newKey,
+          sizeBytes: BigInt(bytesWritten),
+          zkEncryptedName: meta.encryptedName,
+          zkIv: meta.iv,
+          zkWrappedKey: meta.wrappedKey,
+        },
+      });
+      await app.ctx.storage.delete(oldKey).catch(() => {});
+      await adjustUsage(req.user!.id, bytesWritten - Number(existing.sizeBytes));
+      await audit(req, 'zk.update', { target: id });
+      return { ok: true };
+    } catch (err) {
+      await app.ctx.storage.delete(newKey).catch(() => {});
+      if (err instanceof FileTooLargeError) {
+        return reply.code(413).send({ error: 'Upload exceeds your available quota' });
+      }
+      throw err;
+    }
+  });
+
   // GET /zk/files/:id/blob — stream the raw ciphertext for client-side decryption.
   app.get('/files/:id/blob', async (req, reply) => {
     const { id } = req.params as { id: string };

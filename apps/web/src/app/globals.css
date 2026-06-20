@@ -1,3 +1,5 @@
+@import 'highlight.js/styles/github-dark.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -5,6 +7,59 @@
 :root {
   color-scheme: dark;
 }
+
+/* ── In-app Markdown preview ──────────────────────────────────────────────── */
+.md-prose {
+  color: rgb(228 228 231);
+  line-height: 1.7;
+  font-size: 0.9rem;
+  word-wrap: break-word;
+}
+.md-prose > :first-child { margin-top: 0; }
+.md-prose > :last-child { margin-bottom: 0; }
+.md-prose h1, .md-prose h2, .md-prose h3, .md-prose h4 {
+  color: rgb(244 244 245);
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 1.4em 0 0.6em;
+}
+.md-prose h1 { font-size: 1.6em; border-bottom: 1px solid rgb(255 255 255 / 0.1); padding-bottom: 0.3em; }
+.md-prose h2 { font-size: 1.35em; border-bottom: 1px solid rgb(255 255 255 / 0.08); padding-bottom: 0.25em; }
+.md-prose h3 { font-size: 1.15em; }
+.md-prose p, .md-prose ul, .md-prose ol, .md-prose blockquote, .md-prose table, .md-prose pre { margin: 0.7em 0; }
+.md-prose ul, .md-prose ol { padding-left: 1.5em; }
+.md-prose ul { list-style: disc; }
+.md-prose ol { list-style: decimal; }
+.md-prose li { margin: 0.25em 0; }
+.md-prose li > input[type='checkbox'] { margin-right: 0.5em; }
+.md-prose a { color: rgb(196 181 253); text-decoration: underline; text-underline-offset: 2px; }
+.md-prose a:hover { color: rgb(216 207 255); }
+.md-prose strong { color: rgb(244 244 245); font-weight: 600; }
+.md-prose blockquote {
+  border-left: 3px solid rgb(139 92 246 / 0.5);
+  padding-left: 1em;
+  color: rgb(161 161 170);
+}
+.md-prose hr { border: 0; border-top: 1px solid rgb(255 255 255 / 0.1); margin: 1.5em 0; }
+.md-prose code {
+  background: rgb(255 255 255 / 0.07);
+  padding: 0.15em 0.4em;
+  border-radius: 0.3em;
+  font-size: 0.85em;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.md-prose pre {
+  background: rgb(13 13 18);
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 0.6em;
+  padding: 1em;
+  overflow-x: auto;
+}
+.md-prose pre code { background: transparent; padding: 0; font-size: 0.85em; }
+.md-prose table { border-collapse: collapse; display: block; overflow-x: auto; }
+.md-prose th, .md-prose td { border: 1px solid rgb(255 255 255 / 0.12); padding: 0.45em 0.7em; }
+.md-prose th { background: rgb(255 255 255 / 0.04); font-weight: 600; }
+.md-prose img { max-width: 100%; border-radius: 0.5em; }
 
 html,
 body {

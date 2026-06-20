@@ -283,6 +283,37 @@ runIf('API integration', () => {
       expect(Buffer.from(blob.rawPayload).equals(cipher)).toBe(true); // byte-for-byte round-trip
     });
 
+    it('replaces a ZK file in place (editor save) keeping the same id', async () => {
+      const user = await createUser({ email: 'zked@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 'zked@test.local', 'correct-horse-battery');
+      const vault = await app.inject({ method: 'POST', url: '/folders', headers: authHeaders(auth), payload: { name: 'vault', isZeroKnowledge: true } });
+      const folderId = vault.json().folder.id as string;
+
+      const first = new FormData();
+      first.append('meta', JSON.stringify({ folderId, encryptedName: 'a.b', iv: 'aXY=', wrappedKey: 'aXY=.d3I=', encMode: 'ZK' }));
+      first.append('file', Buffer.from('short'), { filename: 'blob', contentType: 'application/octet-stream' });
+      const up = await app.inject({ method: 'POST', url: '/zk/files', payload: first.getBuffer(), headers: { ...first.getHeaders(), ...authHeaders(auth) } });
+      const id = up.json().id as string;
+      const before = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+      expect(Number(before.usedBytes)).toBe(5);
+
+      const longer = Buffer.from('a much longer ciphertext payload');
+      const put = new FormData();
+      put.append('meta', JSON.stringify({ encryptedName: 'c.d', iv: 'enc=', wrappedKey: 'enc=.W=' }));
+      put.append('file', longer, { filename: 'blob', contentType: 'application/octet-stream' });
+      const res = await app.inject({ method: 'PUT', url: `/zk/files/${id}`, payload: put.getBuffer(), headers: { ...put.getHeaders(), ...authHeaders(auth) } });
+      expect(res.statusCode).toBe(200);
+
+      const list = await app.inject({ method: 'GET', url: `/zk/files?folderId=${folderId}`, headers: { cookie: auth.cookie } });
+      expect(list.json().files).toHaveLength(1); // still one file, same id
+      expect(list.json().files[0].id).toBe(id);
+      expect(list.json().files[0].iv).toBe('enc='); // metadata updated
+      const blob = await app.inject({ method: 'GET', url: `/zk/files/${id}/blob`, headers: { cookie: auth.cookie } });
+      expect(Buffer.from(blob.rawPayload).equals(longer)).toBe(true);
+      const after = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+      expect(Number(after.usedBytes)).toBe(longer.length); // quota tracks the delta
+    });
+
     it('rejects a ZK upload that exceeds the quota', async () => {
       await createUser({ email: 'zkq@test.local', password: 'correct-horse-battery', quotaBytes: 8n });
       const auth = await login(app, 'zkq@test.local', 'correct-horse-battery');

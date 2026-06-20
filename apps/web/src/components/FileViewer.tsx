@@ -10,8 +10,10 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Loader2, X } from 'lucide-react';
-import { fileVisual, previewKind } from '@/lib/fileType';
+import { fileVisual, isEditableText, previewKind } from '@/lib/fileType';
 import { PdfCanvas } from '@/components/PdfCanvas';
+import { TextDocument } from '@/components/TextDocument';
+import { useT } from '@/lib/i18n';
 import { formatBytes } from '@opencoperlock/shared/client';
 
 export interface ViewerSource {
@@ -24,9 +26,12 @@ export interface ViewerSource {
   blob?: Blob;
   /** Optional explicit download handler (e.g. ZK decrypt-and-save). */
   onDownload?: () => void;
+  /** When set, text files become editable; called with the new contents to persist. */
+  onSave?: (text: string) => Promise<void>;
 }
 
 export function FileViewer({ source, onClose }: { source: ViewerSource; onClose: () => void }) {
+  const { t } = useT();
   const kind = previewKind(source.name, source.mime);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [dataBlob, setDataBlob] = useState<Blob | null>(null);
@@ -58,7 +63,7 @@ export function FileViewer({ source, onClose }: { source: ViewerSource; onClose:
         }
         // PDFs are rendered from the Blob by <PdfCanvas> (no object URL / iframe).
       } catch {
-        if (!cancelled) setError('Aperçu indisponible. Vous pouvez télécharger le fichier.');
+        if (!cancelled) setError(t('viewer.unavailable'));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -95,7 +100,7 @@ export function FileViewer({ source, onClose }: { source: ViewerSource; onClose:
           <button
             className="rounded-lg p-2 text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100"
             onClick={onClose}
-            title="Fermer"
+            title={t('viewer.close')}
           >
             <X size={18} />
           </button>
@@ -118,7 +123,7 @@ export function FileViewer({ source, onClose }: { source: ViewerSource; onClose:
           <div className="h-full w-full self-stretch">
             <PdfCanvas
               blob={dataBlob}
-              onFail={() => setError('Aperçu PDF indisponible. Vous pouvez télécharger le fichier.')}
+              onFail={() => setError(t('viewer.pdfUnavailable'))}
             />
           </div>
         ) : kind === 'video' && objectUrl ? (
@@ -126,15 +131,15 @@ export function FileViewer({ source, onClose }: { source: ViewerSource; onClose:
         ) : kind === 'audio' && objectUrl ? (
           <audio src={objectUrl} controls autoPlay className="w-full max-w-lg" />
         ) : kind === 'text' && text !== null ? (
-          <pre className="h-full w-full max-w-4xl overflow-auto rounded-lg border border-white/10 bg-ink-900 p-4 text-xs leading-relaxed text-zinc-300">
-            {text}
-          </pre>
-        ) : (
-          <Fallback
-            visual={visual}
-            message="Aucun aperçu pour ce type de fichier. Téléchargez-le pour l’ouvrir."
-            source={source}
+          <TextDocument
+            name={source.name}
+            mime={source.mime}
+            initialText={text}
+            editable={!!source.onSave && isEditableText(source.name, source.mime)}
+            onSave={source.onSave}
           />
+        ) : (
+          <Fallback visual={visual} message={t('viewer.noPreview')} source={source} />
         )}
       </div>
     </div>,
@@ -163,17 +168,18 @@ function Fallback({
 }
 
 function DownloadButton({ source, primary }: { source: ViewerSource; primary?: boolean }) {
+  const { t } = useT();
   const cls = primary ? 'btn-primary' : 'btn-ghost';
   if (source.onDownload) {
     return (
       <button className={cls} onClick={source.onDownload}>
-        <Download size={16} /> Télécharger
+        <Download size={16} /> {t('common.download')}
       </button>
     );
   }
   return (
     <a className={cls} href={source.url} download={source.name}>
-      <Download size={16} /> Télécharger
+      <Download size={16} /> {t('common.download')}
     </a>
   );
 }

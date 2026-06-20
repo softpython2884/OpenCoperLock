@@ -99,7 +99,8 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
   patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
-  upload: <T>(path: string, formData: FormData) => request<T>(path, { method: 'POST', formData }),
+  upload: <T>(path: string, formData: FormData, method: 'POST' | 'PUT' = 'POST') =>
+    request<T>(path, { method, formData }),
   uploadWithProgress,
   /** Build an absolute URL for a download link / blob fetch. */
   url: (path: string) => `${API_URL}${path}`,

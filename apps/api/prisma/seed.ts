@@ -28,13 +28,17 @@ async function main(): Promise<void> {
   }
 
   const quota = process.env.DEFAULT_USER_QUOTA_BYTES;
-  await prisma.user.create({
+  const admin = await prisma.user.create({
     data: {
       email,
       passwordHash: await argon2.hash(password, { type: argon2.argon2id }),
       role: 'ADMIN',
       quotaBytes: quota ? BigInt(quota) : null,
     },
+  });
+  // Every account owns a Fast-Upload folder where Quick-Upload code drops land.
+  await prisma.folder.create({
+    data: { ownerId: admin.id, parentId: null, name: 'Fast-Upload', isZeroKnowledge: false },
   });
   console.log(`Created admin user: ${email}`);
 }

@@ -1,3 +1,4 @@
+import FormData from 'form-data';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../src/db.js';
@@ -288,6 +289,45 @@ runIf('API integration', () => {
         payload: { code: 'no spaces!' },
       });
       expect(bad.statusCode).toBe(400);
+    });
+
+    it('drops code uploads with no explicit target into the owner Fast-Upload folder', async () => {
+      const admin = await createUser({ email: 'fu@test.local', password: 'correct-horse-battery', role: 'ADMIN' });
+      const auth = await login(app, 'fu@test.local', 'correct-horse-battery');
+
+      // A code with no targetFolderId.
+      const created = await app.inject({
+        method: 'POST',
+        url: '/admin/quick-codes',
+        headers: authHeaders(auth),
+        payload: {},
+      });
+      expect(created.statusCode).toBe(201);
+      const code = created.json().code.code as string;
+
+      // Guest upload (no auth / no CSRF on the public quick route).
+      const form = new FormData();
+      form.append('file', Buffer.from('dropped by code'), { filename: 'drop.txt', contentType: 'text/plain' });
+      const up = await app.inject({
+        method: 'POST',
+        url: `/quick/${code}`,
+        payload: form.getBuffer(),
+        headers: form.getHeaders(),
+      });
+      expect(up.statusCode).toBe(201);
+
+      // The file landed in the owner's Fast-Upload folder.
+      const fastFolder = await prisma.folder.findFirst({
+        where: { ownerId: admin.id, parentId: null, name: 'Fast-Upload' },
+      });
+      expect(fastFolder).not.toBeNull();
+      const listed = await app.inject({
+        method: 'GET',
+        url: `/files?folderId=${fastFolder!.id}`,
+        headers: authHeaders(auth),
+      });
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json().files.map((f: { name: string }) => f.name)).toContain('drop.txt');
     });
   });
 

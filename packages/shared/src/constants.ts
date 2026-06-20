@@ -37,6 +37,13 @@ export const SESSION_COOKIE = 'ocl_session';
 /** Header carrying the CSRF token on mutating requests. */
 export const CSRF_HEADER = 'x-ocl-csrf';
 
+/**
+ * Well-known name of the per-user folder that collects everything dropped through a
+ * Quick-Upload code. Every account gets one, and code uploads with no explicit target
+ * land here so the owner always knows where to look.
+ */
+export const FAST_UPLOAD_FOLDER_NAME = 'Fast-Upload';
+
 /** Crypto parameters for server-side envelope encryption. */
 export const CRYPTO = {
   /** AES-256-GCM. */

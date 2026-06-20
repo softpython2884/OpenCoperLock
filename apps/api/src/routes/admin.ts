@@ -11,6 +11,7 @@ import { parseOr400 } from '../lib/validate.js';
 import { hashPassword } from '../services/password.js';
 import { toPublicQuickCode, toPublicUser } from '../lib/serialize.js';
 import { getGlobalCapBytes, getGlobalUsedBytes } from '../services/quota.js';
+import { ensureFastUploadFolder } from '../services/fastupload.js';
 import { runMaintenance } from '../services/maintenance.js';
 import { audit } from '../services/audit.js';
 
@@ -59,6 +60,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
         quotaBytes,
       },
     });
+    // Give the new account its Fast-Upload folder up front so it's there from day one.
+    await ensureFastUploadFolder(user.id);
     await audit(req, 'admin.user.create', { target: user.id });
     return reply.code(201).send({ user: toPublicUser(user) });
   });

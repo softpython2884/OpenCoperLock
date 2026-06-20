@@ -20,6 +20,7 @@ import {
 } from '../services/ingest.js';
 import { adjustUsage, remainingAllowance } from '../services/quota.js';
 import { checkLock, clearFailures, recordFailure } from '../services/throttle.js';
+import { ensureFastUploadFolder } from '../services/fastupload.js';
 import { audit } from '../services/audit.js';
 
 function isExpired(expiresAt: Date | null): boolean {
@@ -94,6 +95,9 @@ export const quickRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const ownerId = entry.createdById;
+    // No explicit target → drop into the owner's Fast-Upload folder, so every code upload
+    // lands somewhere predictable instead of the account root.
+    const targetFolderId = entry.targetFolderId ?? (await ensureFastUploadFolder(ownerId));
     const ownerAllowance = await remainingAllowance(ownerId);
     const maxBytes = Math.min(
       ownerAllowance,
@@ -107,7 +111,7 @@ export const quickRoutes: FastifyPluginAsync = async (app) => {
       const file = await prisma.fileObject.create({
         data: {
           ownerId,
-          folderId: entry.targetFolderId,
+          folderId: targetFolderId,
           name: filePart.filename,
           sizeBytes: BigInt(result.sizeBytes),
           mimeType: filePart.mimetype,

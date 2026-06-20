@@ -6,6 +6,7 @@ import { formatBytes } from '@opencoperlock/shared/client';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { confirm, prompt } from '@/components/ui/overlays';
+import { UpdatePanel } from './UpdatePanel';
 
 interface Stats {
   globalUsedBytes: number;
@@ -97,6 +98,9 @@ export default function AdminPage() {
           />
         </div>
       )}
+
+      {/* Version & updates */}
+      <UpdatePanel />
 
       {/* Global cap setting */}
       <section className="card space-y-2">

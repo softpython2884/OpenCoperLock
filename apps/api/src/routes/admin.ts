@@ -13,6 +13,13 @@ import { toPublicQuickCode, toPublicUser } from '../lib/serialize.js';
 import { getGlobalCapBytes, getGlobalUsedBytes } from '../services/quota.js';
 import { ensureFastUploadFolder } from '../services/systemFolders.js';
 import { runMaintenance } from '../services/maintenance.js';
+import {
+  commitsBehind,
+  getLocalVersion,
+  getRemoteVersion,
+  readUpdateStatus,
+  startUpdate,
+} from '../services/version.js';
 import { audit } from '../services/audit.js';
 
 const GLOBAL_SETTING_ID = 'global';
@@ -139,6 +146,38 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       warnings.push(`${nearQuota.length} user(s) are near their quota: ${nearQuota.slice(0, 5).join(', ')}.`);
     }
     return { warnings, infectedCount };
+  });
+
+  // ── Version & self-update ────────────────────────────────────────────────--
+  // GET /admin/version — current build, last update attempt, and (with ?check=1) the
+  // latest version available on GitHub. The remote check is opt-in to avoid hitting the
+  // GitHub rate limit on every admin page load.
+  app.get('/version', async (req) => {
+    const { check } = req.query as { check?: string };
+    const local = await getLocalVersion();
+    const status = readUpdateStatus();
+    const base = {
+      current: local,
+      status,
+      selfUpdateEnabled: app.ctx.env.SELF_UPDATE_ENABLED,
+      repo: app.ctx.env.GITHUB_REPO,
+      branch: app.ctx.env.UPDATE_BRANCH,
+    };
+    if (check !== '1') return { ...base, checked: false };
+
+    const remote = await getRemoteVersion(app.ctx.env);
+    if (!remote) return { ...base, checked: true, remote: null, updateAvailable: false, behindBy: null };
+    const updateAvailable = local.sha !== null && local.sha !== remote.sha;
+    const behindBy = local.sha ? await commitsBehind(app.ctx.env, local.sha, remote.sha) : null;
+    return { ...base, checked: true, remote, updateAvailable, behindBy };
+  });
+
+  // POST /admin/update — trigger an in-place update (git reset + rebuild + PM2 reload).
+  app.post('/update', async (req, reply) => {
+    const result = startUpdate(app.ctx.env);
+    if (!result.ok) return reply.code(409).send({ error: result.error });
+    await audit(req, 'admin.update.start');
+    return reply.code(202).send({ ok: true });
   });
 
   // ── Maintenance (manual trigger) ─────────────────────────────────────────--

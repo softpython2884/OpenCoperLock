@@ -55,6 +55,19 @@ const envSchema = z.object({
   CLAMAV_PORT: z.coerce.number().int().positive().default(3310),
 
   VIRUSTOTAL_API_KEY: z.string().optional().default(''),
+
+  // ── Version tracking & self-update ──────────────────────────────────────────
+  // The GitHub repo to check for new versions, and the branch we track.
+  GITHUB_REPO: z.string().default('softpython2884/OpenCoperLock'),
+  UPDATE_BRANCH: z.string().default('main'),
+  // Optional token to raise GitHub's unauthenticated rate limit (read-only is enough).
+  GITHUB_TOKEN: z.string().optional().default(''),
+  // Gate the one-click admin self-update. Disable on hosts where updates are managed
+  // externally (e.g. CI/CD) so the button can't trigger an in-place rebuild.
+  SELF_UPDATE_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
 });
 
 export type Env = z.infer<typeof envSchema> & { masterKey: Buffer };

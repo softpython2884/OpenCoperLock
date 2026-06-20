@@ -51,3 +51,5 @@ test-results/
 .vscode/*
 !.vscode/extensions.json
 Thumbs.db
+/.update-status.json
+/.update.log

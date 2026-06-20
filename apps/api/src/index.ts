@@ -1,5 +1,6 @@
 // Side-effect import: must come first so .env is loaded before anything reads process.env.
 import './config/dotenv.js';
+import { setDefaultResultOrder } from 'node:dns';
 import { mkdir } from 'node:fs/promises';
 import { loadEnv } from './env.js';
 import { createContext } from './context.js';
@@ -7,6 +8,11 @@ import { buildServer } from './server.js';
 import { startRemoteWorker } from './worker/remote-worker.js';
 import { startMaintenance } from './services/maintenance.js';
 import { prisma } from './db.js';
+
+// Prefer IPv4 when resolving outbound hosts. Some self-hosted boxes advertise IPv6 but have
+// no working IPv6 route (or no AAAA records), which makes Node's fetch hang until it times out
+// — e.g. the GitHub update check. Resolving IPv4-first mirrors `curl -4` and avoids the stall.
+setDefaultResultOrder('ipv4first');
 
 async function main(): Promise<void> {
   const env = loadEnv();

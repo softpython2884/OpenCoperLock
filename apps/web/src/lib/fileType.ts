@@ -87,6 +87,12 @@ export function isMarkdown(name: string, mime?: string): boolean {
   return ['md', 'markdown', 'mdown', 'mkd', 'mdx'].includes(e) || (mime ?? '').includes('markdown');
 }
 
+/** True for HTML files, which the viewer can render in a sandboxed iframe. */
+export function isHtml(name: string, mime?: string): boolean {
+  const e = ext(name);
+  return ['html', 'htm', 'xhtml'].includes(e) || (mime ?? '').includes('text/html');
+}
+
 /** Map a filename to a highlight.js language hint (empty = let it auto-detect). */
 export function codeLanguage(name: string): string {
   const e = ext(name);

@@ -20,7 +20,7 @@ import {
 } from '../services/ingest.js';
 import { adjustUsage, remainingAllowance } from '../services/quota.js';
 import { checkLock, clearFailures, recordFailure } from '../services/throttle.js';
-import { ensureFastUploadFolder } from '../services/fastupload.js';
+import { ensureFastUploadFolder } from '../services/systemFolders.js';
 import { audit } from '../services/audit.js';
 
 function isExpired(expiresAt: Date | null): boolean {

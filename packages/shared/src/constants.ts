@@ -38,11 +38,12 @@ export const SESSION_COOKIE = 'ocl_session';
 export const CSRF_HEADER = 'x-ocl-csrf';
 
 /**
- * Well-known name of the per-user folder that collects everything dropped through a
- * Quick-Upload code. Every account gets one, and code uploads with no explicit target
- * land here so the owner always knows where to look.
+ * Well-known names of the per-user system folders that collect files which would otherwise
+ * have no home: Quick-Upload code drops and Remote-Upload fetches. Each is created on demand
+ * (and eagerly for Fast-Upload at account creation) so the owner always knows where to look.
  */
 export const FAST_UPLOAD_FOLDER_NAME = 'Fast-Upload';
+export const REMOTE_UPLOAD_FOLDER_NAME = 'Remote-Upload';
 
 /** Crypto parameters for server-side envelope encryption. */
 export const CRYPTO = {

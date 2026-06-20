@@ -3,6 +3,7 @@ import { assertAllowedUrl, remoteUploadSchema, SsrfError } from '@opencoperlock/
 import { prisma } from '../db.js';
 import { parseOr400 } from '../lib/validate.js';
 import { toPublicRemoteJob } from '../lib/serialize.js';
+import { ensureRemoteUploadFolder } from '../services/systemFolders.js';
 import { audit } from '../services/audit.js';
 
 export const remoteRoutes: FastifyPluginAsync = async (app) => {
@@ -41,8 +42,12 @@ export const remoteRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
+    // No explicit target → fetch into the owner's Remote-Upload folder (created on demand),
+    // so downloaded files are always retrievable instead of scattered at the account root.
+    const folderId = body.folderId ?? (await ensureRemoteUploadFolder(req.user!.id));
+
     const job = await prisma.remoteUploadJob.create({
-      data: { ownerId: req.user!.id, sourceUrl: body.sourceUrl, folderId: body.folderId ?? null },
+      data: { ownerId: req.user!.id, sourceUrl: body.sourceUrl, folderId },
     });
     await audit(req, 'remote.enqueue', { target: job.id });
     return reply.code(202).send({ job: toPublicRemoteJob(job) });

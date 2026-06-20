@@ -11,7 +11,7 @@ import { parseOr400 } from '../lib/validate.js';
 import { hashPassword } from '../services/password.js';
 import { toPublicQuickCode, toPublicUser } from '../lib/serialize.js';
 import { getGlobalCapBytes, getGlobalUsedBytes } from '../services/quota.js';
-import { ensureFastUploadFolder } from '../services/fastupload.js';
+import { ensureFastUploadFolder } from '../services/systemFolders.js';
 import { runMaintenance } from '../services/maintenance.js';
 import { audit } from '../services/audit.js';
 

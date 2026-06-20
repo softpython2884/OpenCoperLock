@@ -11,6 +11,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { AppContext } from '../context.js';
 import { prisma } from '../db.js';
+import { purgeExpiredTrash } from './trash.js';
 
 export interface ReconcileResult {
   usersChecked: number;
@@ -99,12 +100,16 @@ export async function pruneThrottle(): Promise<number> {
 
 /** Run one full maintenance pass. Safe to call manually (admin) or on a timer. */
 export async function runMaintenance(ctx: AppContext, log: FastifyBaseLogger) {
+  // Purge Trash past its retention window first, so reconcile/orphan steps see the freed space.
+  const trashCutoff = new Date(Date.now() - ctx.env.TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const trashPurged = await purgeExpiredTrash(ctx, trashCutoff);
   const reconcile = await reconcileUsage();
   const orphans = await collectOrphans(ctx, ctx.env.ORPHAN_GRACE_HOURS, log);
   const audit = await pruneAuditLog(ctx.env.AUDIT_RETENTION_DAYS);
   const jobs = await pruneJobs(ctx.env.JOB_RETENTION_DAYS);
   const throttle = await pruneThrottle();
   const summary = {
+    trashPurged,
     usersAdjusted: reconcile.usersAdjusted,
     orphansDeleted: orphans.deleted,
     auditPruned: audit,

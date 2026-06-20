@@ -38,6 +38,8 @@ const envSchema = z.object({
   // Maintenance / retention
   AUDIT_RETENTION_DAYS: z.coerce.number().int().positive().default(90),
   JOB_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  // How long items stay in the Trash before being purged automatically.
+  TRASH_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
   ORPHAN_GRACE_HOURS: z.coerce.number().int().positive().default(24),
   MAINTENANCE_INTERVAL_HOURS: z.coerce.number().int().positive().default(24),
 

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { FolderLock, Share2, Globe, Settings, ShieldCheck, LogOut, Menu, X } from 'lucide-react';
+import { FolderLock, Share2, Globe, Settings, ShieldCheck, LogOut, Menu, X, Trash2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { Wordmark } from '@/components/Wordmark';
 import { StatusBanner } from '@/components/StatusBanner';
@@ -13,6 +13,7 @@ const NAV = [
   { href: '/drive', label: 'Mes Espaces', icon: FolderLock },
   { href: '/shares', label: 'Partages', icon: Share2 },
   { href: '/remote', label: 'Remote', icon: Globe },
+  { href: '/trash', label: 'Corbeille', icon: Trash2 },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

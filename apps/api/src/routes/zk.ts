@@ -9,6 +9,7 @@ import { zkFileMetaSchema } from '@opencoperlock/shared';
 import { prisma } from '../db.js';
 import { newStorageKey } from '../storage/index.js';
 import { adjustUsage, remainingAllowance } from '../services/quota.js';
+import { trashFile } from '../services/trash.js';
 import { audit } from '../services/audit.js';
 import { FileTooLargeError } from '../services/ingest.js';
 import type { Readable } from 'node:stream';
@@ -37,7 +38,7 @@ export const zkRoutes: FastifyPluginAsync = async (app) => {
     if (!folder) return reply.code(404).send({ error: 'Vault folder not found' });
 
     const files = await prisma.fileObject.findMany({
-      where: { ownerId: req.user!.id, folderId, encMode: 'ZK' },
+      where: { ownerId: req.user!.id, folderId, encMode: 'ZK', deletedAt: null },
       orderBy: { createdAt: 'desc' },
     });
     return {
@@ -127,17 +128,15 @@ export const zkRoutes: FastifyPluginAsync = async (app) => {
     return reply.send(app.ctx.storage.createReadStream(file.storageKey));
   });
 
-  // DELETE /zk/files/:id — remove a vault file.
+  // DELETE /zk/files/:id — move a vault file to the Trash (soft-delete).
   app.delete('/files/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const file = await prisma.fileObject.findFirst({
-      where: { id, ownerId: req.user!.id, encMode: 'ZK' },
+      where: { id, ownerId: req.user!.id, encMode: 'ZK', deletedAt: null },
     });
     if (!file) return reply.code(404).send({ error: 'File not found' });
-    await app.ctx.storage.delete(file.storageKey).catch(() => {});
-    await prisma.fileObject.delete({ where: { id: file.id } });
-    await adjustUsage(req.user!.id, -Number(file.sizeBytes));
-    await audit(req, 'zk.delete', { target: file.id });
+    await trashFile(req.user!.id, file.id);
+    await audit(req, 'zk.trash', { target: file.id });
     return { ok: true };
   });
 };

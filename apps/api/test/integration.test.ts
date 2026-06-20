@@ -113,13 +113,23 @@ runIf('API integration', () => {
       expect(patched.json().file.name).toBe('renamed.txt');
       expect(patched.json().file.folderId).toBe(folderId);
 
-      // Delete releases quota.
+      // Delete moves the file to the Trash — quota is still held until it is purged.
       const del = await app.inject({
         method: 'DELETE',
         url: `/files/${fileId}`,
         headers: authHeaders(auth),
       });
       expect(del.statusCode).toBe(200);
+      const trashed = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+      expect(Number(trashed.usedBytes)).toBeGreaterThan(0);
+
+      // Purging it from the Trash releases the quota.
+      const purge = await app.inject({
+        method: 'DELETE',
+        url: `/trash/files/${fileId}`,
+        headers: authHeaders(auth),
+      });
+      expect(purge.statusCode).toBe(200);
       const final = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
       expect(Number(final.usedBytes)).toBe(0);
     });
@@ -328,6 +338,68 @@ runIf('API integration', () => {
       });
       expect(listed.statusCode).toBe(200);
       expect(listed.json().files.map((f: { name: string }) => f.name)).toContain('drop.txt');
+    });
+  });
+
+  describe('trash (soft-delete)', () => {
+    it('soft-deletes, hides from listings, restores, then purges and frees quota', async () => {
+      await createUser({ email: 'trash@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 'trash@test.local', 'correct-horse-battery');
+      const up = await uploadFile(app, '/files', auth, 'doc.txt', Buffer.from('hello trash'));
+      const fileId = up.json().file.id as string;
+
+      // Delete → goes to the Trash (still counts against quota).
+      const del = await app.inject({ method: 'DELETE', url: `/files/${fileId}`, headers: authHeaders(auth) });
+      expect(del.statusCode).toBe(200);
+
+      const list = await app.inject({ method: 'GET', url: '/files', headers: { cookie: auth.cookie } });
+      expect(list.json().files.map((f: { id: string }) => f.id)).not.toContain(fileId);
+
+      const trash = await app.inject({ method: 'GET', url: '/trash', headers: { cookie: auth.cookie } });
+      expect(trash.json().entries.map((e: { id: string }) => e.id)).toContain(fileId);
+
+      const me1 = await app.inject({ method: 'GET', url: '/auth/me', headers: { cookie: auth.cookie } });
+      expect(me1.json().user.usedBytes).toBeGreaterThan(0);
+
+      // Restore → back in the listing.
+      const restore = await app.inject({ method: 'POST', url: `/trash/files/${fileId}/restore`, headers: authHeaders(auth) });
+      expect(restore.statusCode).toBe(200);
+      const list2 = await app.inject({ method: 'GET', url: '/files', headers: { cookie: auth.cookie } });
+      expect(list2.json().files.map((f: { id: string }) => f.id)).toContain(fileId);
+
+      // Delete again then purge → gone from Trash and quota released.
+      await app.inject({ method: 'DELETE', url: `/files/${fileId}`, headers: authHeaders(auth) });
+      const purge = await app.inject({ method: 'DELETE', url: `/trash/files/${fileId}`, headers: authHeaders(auth) });
+      expect(purge.statusCode).toBe(200);
+      const trash2 = await app.inject({ method: 'GET', url: '/trash', headers: { cookie: auth.cookie } });
+      expect(trash2.json().entries.length).toBe(0);
+      const me2 = await app.inject({ method: 'GET', url: '/auth/me', headers: { cookie: auth.cookie } });
+      expect(me2.json().user.usedBytes).toBe(0);
+    });
+
+    it('trashing a folder hides its files and restoring brings them back', async () => {
+      await createUser({ email: 'trash2@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 'trash2@test.local', 'correct-horse-battery');
+      const folder = await app.inject({
+        method: 'POST',
+        url: '/folders',
+        headers: authHeaders(auth),
+        payload: { name: 'box' },
+      });
+      const folderId = folder.json().folder.id as string;
+      const up = await uploadFile(app, `/files?folderId=${folderId}`, auth, 'inside.txt', Buffer.from('x'));
+      const fileId = up.json().file.id as string;
+
+      await app.inject({ method: 'DELETE', url: `/folders/${folderId}`, headers: authHeaders(auth) });
+      // Folder shows as a single Trash root; its file is hidden (trashed via the parent).
+      const trash = await app.inject({ method: 'GET', url: '/trash', headers: { cookie: auth.cookie } });
+      const ids = trash.json().entries.map((e: { id: string }) => e.id);
+      expect(ids).toContain(folderId);
+      expect(ids).not.toContain(fileId);
+
+      await app.inject({ method: 'POST', url: `/trash/folders/${folderId}/restore`, headers: authHeaders(auth) });
+      const files = await app.inject({ method: 'GET', url: `/files?folderId=${folderId}`, headers: { cookie: auth.cookie } });
+      expect(files.json().files.map((f: { id: string }) => f.id)).toContain(fileId);
     });
   });
 

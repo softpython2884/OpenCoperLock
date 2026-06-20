@@ -3,7 +3,7 @@ import { createFolderSchema, randomToken, updateFolderSchema } from '@opencoperl
 import { prisma } from '../db.js';
 import { parseOr400 } from '../lib/validate.js';
 import { toPublicFolder } from '../lib/serialize.js';
-import { adjustUsage } from '../services/quota.js';
+import { trashFolder } from '../services/trash.js';
 import { audit } from '../services/audit.js';
 
 /** Collect a folder's id plus all descendant ids (breadth-first), scoped to one owner. */
@@ -25,7 +25,7 @@ export const folderRoutes: FastifyPluginAsync = async (app) => {
   // GET /folders — flat list of the user's folders (the SPA assembles the tree).
   app.get('/', async (req) => {
     const folders = await prisma.folder.findMany({
-      where: { ownerId: req.user!.id },
+      where: { ownerId: req.user!.id, deletedAt: null },
       orderBy: { name: 'asc' },
     });
     return { folders: folders.map(toPublicFolder) };
@@ -99,32 +99,13 @@ export const folderRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  // DELETE /folders/:id — recursively delete the folder, its subfolders and files,
-  // releasing storage blobs and quota.
+  // DELETE /folders/:id — move the folder (and its whole subtree) to the Trash. Nothing is
+  // destroyed and no quota is released until it is purged from the Trash.
   app.delete('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const root = await prisma.folder.findFirst({ where: { id, ownerId: req.user!.id } });
-    if (!root) return reply.code(404).send({ error: 'Folder not found' });
-
-    const ids = await collectSubtree(root.id, req.user!.id);
-    const files = await prisma.fileObject.findMany({ where: { folderId: { in: ids } } });
-    const fileIds = files.map((f) => f.id);
-    const versions = await prisma.fileVersion.findMany({ where: { fileId: { in: fileIds } } });
-    let freed = 0;
-    for (const file of files) {
-      await app.ctx.storage.delete(file.storageKey).catch((err) => req.log.warn({ err }, 'blob delete failed'));
-      freed += Number(file.sizeBytes);
-    }
-    for (const v of versions) {
-      await app.ctx.storage.delete(v.storageKey).catch(() => {});
-      freed += Number(v.sizeBytes);
-    }
-    await prisma.fileObject.deleteMany({ where: { folderId: { in: ids } } });
-    if (freed > 0) await adjustUsage(req.user!.id, -freed);
-    // Deleting the root cascades the subfolder rows (FolderChildren onDelete: Cascade).
-    await prisma.folder.delete({ where: { id: root.id } });
-
-    await audit(req, 'folder.delete', { target: root.id });
-    return { ok: true, freedBytes: freed };
+    const ok = await trashFolder(req.user!.id, id);
+    if (!ok) return reply.code(404).send({ error: 'Folder not found' });
+    await audit(req, 'folder.trash', { target: id });
+    return { ok: true };
   });
 };

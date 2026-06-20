@@ -9,6 +9,7 @@ import {
   ingestPlaintext,
 } from '../services/ingest.js';
 import { decryptServerFile } from '../services/download.js';
+import { trashFile } from '../services/trash.js';
 import {
   findVersionTarget,
   isVersionable,
@@ -26,7 +27,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
   app.get('/', async (req) => {
     const { folderId } = req.query as { folderId?: string };
     const files = await prisma.fileObject.findMany({
-      where: { ownerId: req.user!.id, folderId: folderId ?? null },
+      where: { ownerId: req.user!.id, folderId: folderId ?? null, deletedAt: null },
       orderBy: { createdAt: 'desc' },
     });
     return { files: files.map(toPublicFile) };
@@ -240,22 +241,13 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     return { file: toPublicFile(updated) };
   });
 
-  // DELETE /files/:id — remove the blob, its versions, and release all their quota.
+  // DELETE /files/:id — move the file to the Trash (soft-delete). It keeps counting against
+  // quota until it is restored or permanently purged from the Trash.
   app.delete('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id } });
-    if (!file) return reply.code(404).send({ error: 'File not found' });
-
-    const versions = await prisma.fileVersion.findMany({ where: { fileId: id } });
-    let freed = Number(file.sizeBytes);
-    await app.ctx.storage.delete(file.storageKey).catch((err) => req.log.warn({ err }, 'blob delete failed'));
-    for (const v of versions) {
-      await app.ctx.storage.delete(v.storageKey).catch(() => {});
-      freed += Number(v.sizeBytes);
-    }
-    await prisma.fileObject.delete({ where: { id: file.id } }); // cascades version rows
-    await adjustUsage(req.user!.id, -freed);
-    await audit(req, 'file.delete', { target: file.id });
+    const ok = await trashFile(req.user!.id, id);
+    if (!ok) return reply.code(404).send({ error: 'File not found' });
+    await audit(req, 'file.trash', { target: id });
     return { ok: true };
   });
 

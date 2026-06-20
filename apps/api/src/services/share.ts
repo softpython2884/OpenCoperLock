@@ -63,7 +63,7 @@ export async function shareEntries(share: ShareLink): Promise<ShareEntry[]> {
   }
   if (share.folderId) {
     const files = await prisma.fileObject.findMany({
-      where: { folderId: share.folderId, ownerId: share.ownerId, encMode: 'SERVER' },
+      where: { folderId: share.folderId, ownerId: share.ownerId, encMode: 'SERVER', deletedAt: null },
       orderBy: { name: 'asc' },
     });
     return files.map(toEntry);
@@ -79,7 +79,7 @@ export async function shareFile(share: ShareLink, fileId: string): Promise<FileO
   }
   if (share.folderId) {
     return prisma.fileObject.findFirst({
-      where: { id: fileId, folderId: share.folderId, ownerId: share.ownerId, encMode: 'SERVER' },
+      where: { id: fileId, folderId: share.folderId, ownerId: share.ownerId, encMode: 'SERVER', deletedAt: null },
     });
   }
   return null;

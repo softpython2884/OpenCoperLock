@@ -113,6 +113,9 @@ model Folder {
   // Per-vault random salt for the client's PBKDF2 key derivation (ZK folders only).
   // Not secret; storing it per vault defeats cross-vault precomputation. null = legacy.
   zkSalt          String?
+  // Soft-delete: when set, the folder is in the Trash (hidden from the Drive) until it is
+  // restored or purged. Trashing a folder cascades this timestamp to its whole subtree.
+  deletedAt       DateTime?
   createdAt       DateTime @default(now())
 
   files  FileObject[]
@@ -120,6 +123,7 @@ model Folder {
 
   @@unique([ownerId, parentId, name])
   @@index([ownerId])
+  @@index([deletedAt])
 }
 
 model FileObject {
@@ -153,6 +157,9 @@ model FileObject {
 
   sha256   String?
   avStatus AvStatus @default(PENDING)
+  // Soft-delete: when set, the file is in the Trash (hidden from listings) until restored
+  // or purged. Trashed files still count against quota until they are permanently removed.
+  deletedAt DateTime?
   createdAt DateTime @default(now())
 
   shares   ShareLink[]
@@ -160,6 +167,7 @@ model FileObject {
 
   @@index([ownerId])
   @@index([folderId])
+  @@index([deletedAt])
 }
 
 // A prior revision of a SERVER-mode file (kept for text-like files). Holds its own

@@ -11,6 +11,7 @@ import authPlugin from './plugins/auth.js';
 import { authRoutes } from './routes/auth.js';
 import { folderRoutes } from './routes/folders.js';
 import { fileRoutes } from './routes/files.js';
+import { trashRoutes } from './routes/trash.js';
 import { zkRoutes } from './routes/zk.js';
 import { quickRoutes } from './routes/quick.js';
 import { remoteRoutes } from './routes/remote.js';
@@ -72,6 +73,7 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(authRoutes, { prefix: '/auth' });
   await app.register(folderRoutes, { prefix: '/folders' });
   await app.register(fileRoutes, { prefix: '/files' });
+  await app.register(trashRoutes, { prefix: '/trash' });
   await app.register(zkRoutes, { prefix: '/zk' });
   await app.register(quickRoutes, { prefix: '/quick' });
   await app.register(remoteRoutes, { prefix: '/remote' });

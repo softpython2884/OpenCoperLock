@@ -300,16 +300,16 @@ export default function EspacesPage() {
   }
 
   async function deleteFile(id: string) {
-    if (!(await confirm({ title: 'Supprimer ce fichier ?', danger: true, confirmLabel: 'Supprimer' }))) return;
+    if (!(await confirm({ title: 'Mettre ce fichier à la corbeille ?', confirmLabel: 'Mettre à la corbeille' }))) return;
     await api.del(isZk ? `/zk/files/${id}` : `/files/${id}`);
     await reloadCurrent();
-    toast('Fichier supprimé', 'success');
+    toast('Déplacé vers la corbeille', 'success');
   }
   async function deleteFolder(id: string) {
-    if (!(await confirm({ title: 'Supprimer ce dossier ?', message: 'Tout son contenu sera supprimé.', danger: true, confirmLabel: 'Supprimer' }))) return;
+    if (!(await confirm({ title: 'Mettre ce dossier à la corbeille ?', message: 'Son contenu part aussi à la corbeille. Vous pourrez le restaurer.', confirmLabel: 'Mettre à la corbeille' }))) return;
     await api.del(`/folders/${id}`);
     await Promise.all([loadFolders(), refresh()]);
-    toast('Dossier supprimé', 'success');
+    toast('Déplacé vers la corbeille', 'success');
   }
   async function renameFile(f: PublicFile) {
     const name = await prompt({ title: 'Renommer', label: 'Nouveau nom', defaultValue: f.name });

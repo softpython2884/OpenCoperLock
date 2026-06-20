@@ -16,7 +16,7 @@
  */
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Check, Info, X } from 'lucide-react';
+import { Check, Info, X } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────--
 
@@ -128,6 +128,12 @@ export function Overlays() {
   );
 }
 
+// Flat, sober button styles shared by the dialogs.
+const BTN = 'rounded-lg px-3.5 py-2 text-[13px] font-semibold transition disabled:opacity-50';
+const BTN_GHOST = `${BTN} border border-white/[0.12] text-zinc-300 hover:bg-white/[0.04]`;
+const BTN_PRIMARY = `${BTN} bg-accent text-white hover:bg-accent-hover`;
+const BTN_DANGER = `${BTN} bg-red-700 text-white hover:bg-red-600`;
+
 function Shell({ children, onCancel }: { children: React.ReactNode; onCancel: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -137,12 +143,9 @@ function Shell({ children, onCancel }: { children: React.ReactNode; onCancel: ()
     return () => window.removeEventListener('keydown', onKey);
   }, [onCancel]);
   return (
-    <div
-      className="fixed inset-0 z-[100] grid place-items-center bg-black/60 p-4 backdrop-blur-sm"
-      onMouseDown={onCancel}
-    >
+    <div className="fixed inset-0 z-[100] grid place-items-center bg-black/60 p-4" onMouseDown={onCancel}>
       <div
-        className="w-full max-w-md rounded-2xl border border-white/10 bg-ink-850 p-5 shadow-glow"
+        className="w-full max-w-md rounded-xl border border-white/[0.08] bg-[#111118] p-[18px] shadow-xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
         {children}
@@ -163,22 +166,13 @@ function DialogHost({ state, onClose }: { state: DialogState; onClose: () => voi
     const o = state.opts;
     return (
       <Shell onCancel={() => finish(false)}>
-        <div className="flex items-start gap-3">
-          {o.danger && (
-            <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-red-500/10 text-red-400">
-              <AlertTriangle size={18} />
-            </span>
-          )}
-          <div className="min-w-0">
-            <h3 className="font-semibold text-zinc-100">{o.title}</h3>
-            {o.message && <p className="mt-1 whitespace-pre-line text-sm text-zinc-400">{o.message}</p>}
-          </div>
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <button className="btn-ghost" onClick={() => finish(false)}>
+        <h3 className="text-[15px] font-semibold text-zinc-100">{o.title}</h3>
+        {o.message && <p className="mt-1.5 whitespace-pre-line text-[13px] leading-relaxed text-zinc-400">{o.message}</p>}
+        <div className="mt-[18px] flex justify-end gap-2">
+          <button className={BTN_GHOST} onClick={() => finish(false)}>
             {o.cancelLabel ?? 'Annuler'}
           </button>
-          <button className={o.danger ? 'btn-danger' : 'btn-primary'} onClick={() => finish(true)} autoFocus>
+          <button className={o.danger ? BTN_DANGER : BTN_PRIMARY} onClick={() => finish(true)} autoFocus>
             {o.confirmLabel ?? 'Confirmer'}
           </button>
         </div>
@@ -196,8 +190,8 @@ function DialogHost({ state, onClose }: { state: DialogState; onClose: () => voi
             finish(value.trim() === '' ? null : value);
           }}
         >
-          <h3 className="font-semibold text-zinc-100">{o.title}</h3>
-          {o.message && <p className="mt-1 text-sm text-zinc-400">{o.message}</p>}
+          <h3 className="text-[15px] font-semibold text-zinc-100">{o.title}</h3>
+          {o.message && <p className="mt-1.5 text-[13px] leading-relaxed text-zinc-400">{o.message}</p>}
           {o.label && <label className="label mt-3">{o.label}</label>}
           <input
             className={`input ${o.label ? '' : 'mt-3'}`}
@@ -207,11 +201,11 @@ function DialogHost({ state, onClose }: { state: DialogState; onClose: () => voi
             autoFocus
             onChange={(e) => setValue(e.target.value)}
           />
-          <div className="mt-5 flex justify-end gap-2">
-            <button type="button" className="btn-ghost" onClick={() => finish(null)}>
+          <div className="mt-[18px] flex justify-end gap-2">
+            <button type="button" className={BTN_GHOST} onClick={() => finish(null)}>
               Annuler
             </button>
-            <button type="submit" className="btn-primary">
+            <button type="submit" className={BTN_PRIMARY}>
               {o.confirmLabel ?? 'Valider'}
             </button>
           </div>
@@ -224,24 +218,24 @@ function DialogHost({ state, onClose }: { state: DialogState; onClose: () => voi
   const o = state.opts;
   return (
     <Shell onCancel={() => finish(null)}>
-      <h3 className="font-semibold text-zinc-100">{o.title}</h3>
-      {o.message && <p className="mt-1 text-sm text-zinc-400">{o.message}</p>}
-      <div className="mt-4 space-y-2">
+      <h3 className="text-[15px] font-semibold text-zinc-100">{o.title}</h3>
+      {o.message && <p className="mt-1.5 text-[13px] leading-relaxed text-zinc-400">{o.message}</p>}
+      <div className="mt-3.5 space-y-2">
         {o.options.map((opt, i) => (
           <button
             key={i}
             onClick={() => finish(opt.value)}
-            className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left transition hover:border-accent/40 hover:bg-white/[0.05]"
+            className="flex w-full items-center gap-3 rounded-lg border border-white/[0.08] px-3 py-2.5 text-left transition hover:bg-white/[0.03]"
           >
             <div className="min-w-0">
-              <p className="font-medium text-zinc-100">{opt.label}</p>
-              {opt.description && <p className="text-xs text-zinc-500">{opt.description}</p>}
+              <p className="text-[13px] font-semibold text-zinc-100">{opt.label}</p>
+              {opt.description && <p className="text-[12px] text-zinc-500">{opt.description}</p>}
             </div>
           </button>
         ))}
       </div>
-      <div className="mt-4 flex justify-end">
-        <button className="btn-ghost" onClick={() => finish(null)}>
+      <div className="mt-3.5 flex justify-end">
+        <button className={BTN_GHOST} onClick={() => finish(null)}>
           Annuler
         </button>
       </div>
@@ -263,7 +257,7 @@ function ToastStack({ toasts }: { toasts: Toast[] }) {
         return (
           <div
             key={t.id}
-            className="pointer-events-auto flex items-start gap-3 rounded-xl border border-white/10 bg-ink-850/95 px-4 py-3 shadow-glow backdrop-blur"
+            className="pointer-events-auto flex items-start gap-3 rounded-lg border border-white/[0.10] bg-[#111118] px-4 py-3 shadow-xl"
           >
             <span className={`mt-0.5 shrink-0 ${tint}`}>
               <Icon size={17} />

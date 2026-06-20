@@ -6,7 +6,7 @@
  * shared folder, and respects the link's access mode (public / code / sign-in required),
  * expiry, and download-disabled flag.
  */
-import { use, useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Download } from 'lucide-react';
 import type { PublicShareView, ShareEntry } from '@opencoperlock/shared/client';
@@ -23,8 +23,7 @@ function fileUrl(token: string, fileId: string, opts: { inline?: boolean; code?:
   return `${API_URL}/s/${token}/file/${fileId}${qs ? `?${qs}` : ''}`;
 }
 
-export default function SharePage({ params }: { params: Promise<{ token: string }> }) {
-  const { token } = use(params);
+export default function ShareClient({ token }: { token: string }) {
   const [view, setView] = useState<PublicShareView | null>(null);
   const [code, setCode] = useState('');
   const [submittedCode, setSubmittedCode] = useState<string | undefined>(undefined);

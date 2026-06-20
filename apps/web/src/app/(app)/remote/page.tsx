@@ -45,48 +45,46 @@ export default function RemotePage() {
 
   return (
     <div className="space-y-6">
-      <div className="card space-y-3">
-        <div>
-          <h1 className="text-lg font-semibold">Remote-Upload</h1>
-          <p className="text-sm text-neutral-500">
-            Paste a link and the server downloads it directly — your own connection stays free.
-            Files are antivirus-scanned and encrypted at rest.
-          </p>
-        </div>
-        <form onSubmit={submit} className="flex gap-2">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-white">Remote-Upload</h1>
+        <p className="mt-1 text-sm text-zinc-500">
+          Collez un lien : le serveur le télécharge directement (votre connexion reste libre).
+          Les fichiers sont analysés et chiffrés au repos, puis rangés dans votre dossier{' '}
+          <span className="font-medium text-zinc-300">Remote-Upload</span>.
+        </p>
+      </div>
+
+      <div className="card">
+        <form onSubmit={submit} className="flex flex-col gap-2 sm:flex-row">
           <input
             className="input"
             type="url"
-            placeholder="https://example.com/large-file.zip"
+            placeholder="https://example.com/gros-fichier.zip"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             required
           />
           <button className="btn-primary whitespace-nowrap" disabled={busy}>
-            {busy ? 'Queuing…' : 'Fetch'}
+            {busy ? 'En file…' : 'Télécharger'}
           </button>
         </form>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-2 text-sm text-red-300">{error}</p>}
       </div>
 
-      <div className="card p-0">
-        <div className="border-b border-neutral-100 px-4 py-2 text-sm font-medium dark:border-neutral-800">
-          Jobs
-        </div>
+      <div>
+        <h2 className="mb-2 text-sm font-medium text-zinc-400">Tâches</h2>
         {jobs.length === 0 ? (
-          <p className="p-6 text-center text-sm text-neutral-400">No remote uploads yet.</p>
+          <div className="card py-10 text-center text-sm text-zinc-500">Aucun téléchargement distant pour l’instant.</div>
         ) : (
-          <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
+          <div className="space-y-2">
             {jobs.map((job) => (
-              <div key={job.id} className="flex items-center justify-between gap-3 px-4 py-3">
+              <div key={job.id} className="row">
                 <div className="min-w-0">
-                  <p className="truncate text-sm">{job.sourceUrl}</p>
-                  {job.error && <p className="text-xs text-red-600">{job.error}</p>}
+                  <p className="truncate text-sm text-zinc-200">{job.sourceUrl}</p>
+                  {job.error && <p className="truncate text-xs text-red-300">{job.error}</p>}
                 </div>
-                <div className="flex items-center gap-3 whitespace-nowrap text-xs">
-                  {job.sizeBytes != null && (
-                    <span className="text-neutral-400">{formatBytes(job.sizeBytes)}</span>
-                  )}
+                <div className="flex shrink-0 items-center gap-3 whitespace-nowrap text-xs">
+                  {job.sizeBytes != null && <span className="text-zinc-500">{formatBytes(job.sizeBytes)}</span>}
                   <JobStatus status={job.status} />
                 </div>
               </div>
@@ -100,10 +98,16 @@ export default function RemotePage() {
 
 function JobStatus({ status }: { status: PublicRemoteJob['status'] }) {
   const map: Record<PublicRemoteJob['status'], string> = {
-    QUEUED: 'bg-neutral-100 text-neutral-600',
-    RUNNING: 'bg-amber-100 text-amber-700',
-    DONE: 'bg-green-100 text-green-700',
-    FAILED: 'bg-red-100 text-red-700',
+    QUEUED: 'bg-white/[0.06] text-zinc-400',
+    RUNNING: 'bg-amber-500/10 text-amber-300',
+    DONE: 'bg-emerald-500/10 text-emerald-300',
+    FAILED: 'bg-red-500/10 text-red-300',
   };
-  return <span className={`rounded px-2 py-0.5 uppercase ${map[status]}`}>{status}</span>;
+  const label: Record<PublicRemoteJob['status'], string> = {
+    QUEUED: 'En file',
+    RUNNING: 'En cours',
+    DONE: 'Terminé',
+    FAILED: 'Échec',
+  };
+  return <span className={`rounded px-2 py-0.5 font-medium uppercase tracking-wide ${map[status]}`}>{label[status]}</span>;
 }

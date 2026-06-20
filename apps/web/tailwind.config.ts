@@ -25,7 +25,7 @@ const config: Config = {
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       boxShadow: {
-        glow: '0 0 0 1px rgba(139,92,246,0.25), 0 8px 30px rgba(139,92,246,0.12)',
+        glow: '0 1px 2px rgba(0,0,0,0.4), 0 12px 32px rgba(0,0,0,0.35)',
       },
     },
   },

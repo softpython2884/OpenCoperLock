@@ -804,8 +804,11 @@ function ErrorLine({ msg }: { msg: string }) {
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="card w-full max-w-md border-white/10 bg-ink-850" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-md rounded-xl border border-white/[0.08] bg-[#111118] p-[18px] shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         {children}
       </div>
     </div>

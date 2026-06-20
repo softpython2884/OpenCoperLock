@@ -20,9 +20,11 @@ next-env.d.ts
 *.key
 
 # Storage / data (self-hosted runtime data must never be committed)
+# NOTE: anchored with a leading slash so these match ONLY repo-root runtime dirs and
+# never source directories such as apps/api/src/storage/.
 /data/
-storage/
-quarantine/
+/storage/
+/quarantine/
 # Project-local PostgreSQL cluster (created by scripts/postgres-local.sh)
 /.postgres/
 # Setup-wizard resume state (contains secrets; removed on successful install)

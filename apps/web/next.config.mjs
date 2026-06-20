@@ -21,10 +21,11 @@ const csp = [
   "object-src 'none'",
   "frame-ancestors 'none'",
   "form-action 'self'",
-  // Share previews stream image/audio/video/pdf from the API origin.
+  // Share previews + the in-app viewer stream image/audio/video/pdf from the API origin or
+  // a client-side blob: URL (e.g. decrypted Zero-Knowledge files, the PDF viewer iframe).
   `img-src 'self' data: blob: ${apiOrigin}`.trim(),
   `media-src 'self' blob: ${apiOrigin}`.trim(),
-  `frame-src 'self' ${apiOrigin}`.trim(),
+  `frame-src 'self' blob: ${apiOrigin}`.trim(),
   "font-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "script-src 'self' 'unsafe-inline'",

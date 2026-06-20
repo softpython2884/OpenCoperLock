@@ -43,6 +43,20 @@ const env = readEnv(path.join(root, '.env'));
 // If a project-local PostgreSQL cluster exists (created by scripts/postgres-local.sh on a
 // random port), let PM2 supervise it too, ahead of the API.
 const hasLocalPostgres = fs.existsSync(path.join(root, '.postgres', 'data', 'PG_VERSION'));
+
+// PostgreSQL refuses to run as root. The cluster is owned by an unprivileged account (set up
+// by scripts/setup-wizard.sh); when PM2 itself runs as root we must drop to that account, or
+// `postgres-local.sh start` would refuse to launch. Derive the uid/gid from whoever owns the
+// cluster so this holds no matter which user it was created under.
+let localPostgresOwner = null;
+if (hasLocalPostgres) {
+  try {
+    const st = fs.statSync(path.join(root, '.postgres'));
+    if (st.uid !== 0) localPostgresOwner = { uid: st.uid, gid: st.gid };
+  } catch {
+    /* fall back to inheriting PM2's own user */
+  }
+}
 const localPostgresApp = {
   name: 'opencoperlock-postgres',
   cwd: root,
@@ -51,6 +65,8 @@ const localPostgresApp = {
   interpreter: 'bash',
   autorestart: true,
   max_restarts: 10,
+  // Drop privileges to the cluster owner when PM2 runs as root (no-op if already that user).
+  ...(localPostgresOwner || {}),
 };
 
 module.exports = {

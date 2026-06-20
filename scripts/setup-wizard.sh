@@ -140,6 +140,15 @@ case "$DB_CHOICE" in
     [[ "$DB_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "Invalid database name (letters, digits, underscore)."
     [[ "$DB_USER" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "Invalid database user (letters, digits, underscore)."
     DB_PASS="$(openssl rand -hex 16)"
+    # The project-local cluster must be OWNED and RUN by a non-root account (PostgreSQL — and
+    # so PM2/deploy.sh while they supervise it — refuse to run as root). When the wizard runs
+    # as root we need a separate account; otherwise the cluster belongs to the current user.
+    if [[ $EUID -eq 0 ]]; then
+      APP_USER="$(ask 'Unprivileged system user to own & run the database' "${SUDO_USER:-opencoperlock}")"
+      [[ "$APP_USER" != root ]] || die 'The project-local database cannot be owned by root — pick another user.'
+    else
+      APP_USER="$(id -un)"
+    fi
     # The port (and thus DATABASE_URL) is chosen at provisioning time (Step 3).
     ;;
   2)
@@ -256,6 +265,18 @@ if [[ "$DB_PROVISION" != existing ]] && ! command -v initdb >/dev/null 2>&1 \
   fi
 fi
 
+# A project-local cluster needs an unprivileged owner. When running as root, create the
+# account if it is missing so Step 3 (and later PM2) can drop privileges to it.
+if [[ "$DB_PROVISION" == local && $EUID -eq 0 ]] && ! id -u "$APP_USER" >/dev/null 2>&1; then
+  if ask_yn "System user '$APP_USER' does not exist. Create it?" 'Y'; then
+    useradd --system --create-home --shell /usr/sbin/nologin "$APP_USER" \
+      || die "Could not create system user '$APP_USER'."
+    ok "Created system user '$APP_USER'"
+  else
+    die "Choose an existing unprivileged user for the project-local database, then re-run."
+  fi
+fi
+
 # nginx + certbot
 if $SETUP_NGINX && ! command -v nginx >/dev/null 2>&1 && [[ "$PKG" == apt ]]; then apt_install nginx; fi
 if $SETUP_TLS && ! command -v certbot >/dev/null 2>&1 && [[ "$PKG" == apt ]]; then apt_install certbot python3-certbot-nginx; fi
@@ -267,7 +288,11 @@ case "$DB_PROVISION" in
   local)
     say ""; info "Step 3 / 8 — Creating a project-local PostgreSQL (random port)"
     # postgres-local.sh must run as the unprivileged app user; it prints the DATABASE_URL.
-    DATABASE_URL="$(DB_NAME="$DB_NAME" DB_USER="$DB_USER" DB_PASS="$DB_PASS" ./scripts/postgres-local.sh init)"
+    # Pre-create .postgres/ owned by that account so a root wizard can hand the cluster off
+    # (the script re-execs itself as PG_RUN_USER when invoked as root).
+    mkdir -p "$ROOT_DIR/.postgres"
+    [[ $EUID -eq 0 ]] && chown "$APP_USER:$(id -gn "$APP_USER")" "$ROOT_DIR/.postgres"
+    DATABASE_URL="$(PG_RUN_USER="$APP_USER" DB_NAME="$DB_NAME" DB_USER="$DB_USER" DB_PASS="$DB_PASS" ./scripts/postgres-local.sh init)"
     [[ -n "$DATABASE_URL" ]] || die 'Project-local database provisioning failed.'
     ok "Project-local PostgreSQL ready (${DATABASE_URL##*@})"
     ;;

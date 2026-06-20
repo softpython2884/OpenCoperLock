@@ -1,5 +1,9 @@
 # OpenCoperLock — manual test checklist
 
+> For a complete, from-scratch walkthrough (install → configure → verify every feature)
+> with a feedback field per step, see **[`GUIDE-DE-TEST.md`](./GUIDE-DE-TEST.md)** (français).
+> This file is the concise per-feature reference.
+
 This sheet tracks what to verify after the current round of work. It is filled in as
 features land. Branch: `claude/opencoplerlock-cloud-toolkit-ofdqng`.
 

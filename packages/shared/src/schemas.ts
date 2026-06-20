@@ -108,6 +108,16 @@ export type RemoteUploadInput = z.infer<typeof remoteUploadSchema>;
 
 export const createQuickCodeSchema = z.object({
   targetFolderId: cuidSchema.nullable().optional(),
+  // Optional custom, memorable code (letters/digits/dashes). Blank => a random code is
+  // generated. Normalised to uppercase so it's case-insensitive to type.
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .min(4)
+    .max(32)
+    .regex(/^[A-Z0-9][A-Z0-9-]*$/, 'Use letters, digits and dashes only')
+    .optional(),
   // null/undefined => no per-upload size limit beyond the user's quota.
   maxBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable().optional(),
   expiresAt: z.coerce.date().nullable().optional(),

@@ -252,6 +252,45 @@ runIf('API integration', () => {
     });
   });
 
+  describe('quick-upload codes', () => {
+    it('accepts a memorable custom code, matched case-insensitively, and rejects duplicates', async () => {
+      await createUser({ email: 'qc@test.local', password: 'correct-horse-battery', role: 'ADMIN' });
+      const auth = await login(app, 'qc@test.local', 'correct-horse-battery');
+
+      const created = await app.inject({
+        method: 'POST',
+        url: '/admin/quick-codes',
+        headers: authHeaders(auth),
+        payload: { code: 'night-2024', usageLimit: 5 },
+      });
+      expect(created.statusCode).toBe(201);
+      expect(created.json().code.code).toBe('NIGHT-2024'); // normalised to uppercase
+
+      // A guest can probe it regardless of the case they type.
+      const probe = await app.inject({ method: 'GET', url: '/quick/Night-2024' });
+      expect(probe.statusCode).toBe(200);
+      expect(probe.json().valid).toBe(true);
+
+      // The same code can't be created twice.
+      const dup = await app.inject({
+        method: 'POST',
+        url: '/admin/quick-codes',
+        headers: authHeaders(auth),
+        payload: { code: 'NIGHT-2024' },
+      });
+      expect(dup.statusCode).toBe(409);
+
+      // An invalid code shape is rejected by validation.
+      const bad = await app.inject({
+        method: 'POST',
+        url: '/admin/quick-codes',
+        headers: authHeaders(auth),
+        payload: { code: 'no spaces!' },
+      });
+      expect(bad.statusCode).toBe(400);
+    });
+  });
+
   describe('share links', () => {
     async function setupFileShare(extra: Record<string, unknown>) {
       await createUser({ email: 's@test.local', password: 'correct-horse-battery' });

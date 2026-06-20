@@ -32,6 +32,8 @@ export default function AdminPage() {
 
   // new-user form
   const [nu, setNu] = useState({ email: '', password: '', role: 'USER' });
+  // new quick-code form (optional memorable code)
+  const [nc, setNc] = useState({ code: '', usageLimit: '' });
 
   const [alerts, setAlerts] = useState<string[]>([]);
 
@@ -200,18 +202,40 @@ export default function AdminPage() {
       {/* Quick codes */}
       <section className="card space-y-3">
         <h2 className="font-semibold">Quick-Upload codes</h2>
-        <button
-          className="btn-primary"
-          onClick={() =>
-            wrap(() =>
-              api.post('/admin/quick-codes', {
-                usageLimit: Number(window.prompt('Usage limit (empty = unlimited)') || '') || null,
-              }),
-            )
-          }
-        >
-          Generate code
-        </button>
+        <p className="text-sm text-neutral-500">
+          Leave the code blank for a random one, or set a memorable code you can type from any
+          device (letters, digits and dashes).
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            className="input max-w-xs font-mono uppercase tracking-wide"
+            placeholder="Custom code (optional)"
+            value={nc.code}
+            onChange={(e) => setNc({ ...nc, code: e.target.value.toUpperCase() })}
+          />
+          <input
+            className="input max-w-[10rem]"
+            type="number"
+            min={1}
+            placeholder="Usage limit (∞)"
+            value={nc.usageLimit}
+            onChange={(e) => setNc({ ...nc, usageLimit: e.target.value })}
+          />
+          <button
+            className="btn-primary"
+            onClick={() =>
+              wrap(async () => {
+                await api.post('/admin/quick-codes', {
+                  code: nc.code.trim() || undefined,
+                  usageLimit: Number(nc.usageLimit) || null,
+                });
+                setNc({ code: '', usageLimit: '' });
+              })
+            }
+          >
+            Create code
+          </button>
+        </div>
         <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
           {codes.map((c) => (
             <div key={c.id} className="flex items-center justify-between gap-2 py-2 text-sm">

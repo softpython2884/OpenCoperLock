@@ -33,7 +33,7 @@ function isUsedUp(usageLimit: number | null, usageCount: number): boolean {
 export const quickRoutes: FastifyPluginAsync = async (app) => {
   // GET /quick/:code — lightweight validity probe for the guest UI.
   app.get('/:code', async (req, reply) => {
-    const { code } = req.params as { code: string };
+    const code = String((req.params as { code: string }).code).toUpperCase();
     const entry = await prisma.quickUploadCode.findUnique({ where: { code } });
     if (!entry || isExpired(entry.expiresAt) || isUsedUp(entry.usageLimit, entry.usageCount)) {
       return reply.code(404).send({ error: 'Code not found or no longer active' });
@@ -47,7 +47,7 @@ export const quickRoutes: FastifyPluginAsync = async (app) => {
     ? { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }
     : {};
   app.post('/:code', quickOpts, async (req, reply) => {
-      const { code } = req.params as { code: string };
+      const code = String((req.params as { code: string }).code).toUpperCase();
       const entry = await prisma.quickUploadCode.findUnique({ where: { code } });
       if (!entry || isExpired(entry.expiresAt) || isUsedUp(entry.usageLimit, entry.usageCount)) {
         return reply.code(404).send({ error: 'Code not found or no longer active' });

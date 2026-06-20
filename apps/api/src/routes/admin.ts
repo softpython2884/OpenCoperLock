@@ -183,9 +183,17 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
+    // Use the admin's chosen memorable code (already uppercased by the schema), or a
+    // random one. Reject a custom code that's already taken.
+    const codeValue = body.code ?? randomCode();
+    if (body.code) {
+      const clash = await prisma.quickUploadCode.findUnique({ where: { code: codeValue } });
+      if (clash) return reply.code(409).send({ error: 'This code is already in use' });
+    }
+
     const code = await prisma.quickUploadCode.create({
       data: {
-        code: randomCode(),
+        code: codeValue,
         createdById: req.user!.id,
         targetFolderId: body.targetFolderId ?? null,
         maxBytes: body.maxBytes == null ? null : BigInt(body.maxBytes),

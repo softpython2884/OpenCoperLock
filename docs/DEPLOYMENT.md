@@ -237,6 +237,20 @@ Put both processes behind your proxy exactly as in the Docker section above (web
 :3000, API on :4000), terminating TLS there. Set `WEB_HOST=127.0.0.1` in the environment
 if you want the web process to bind only to localhost behind the proxy.
 
+## Locked out? Reset the admin password
+
+If you mistyped the admin email or password during setup (or forgot it), reset it from the
+server — no database knowledge required:
+
+```bash
+./scripts/reset-admin.sh
+```
+
+It lists the existing administrator accounts, then prompts for an email and a new password
+(it creates the account if that email doesn't exist, or resets it if it does). It also
+clears that account's sessions, and can optionally disable its two-factor. The
+project-local database is started automatically if it isn't already running.
+
 ## Running without Docker (dev)
 
 ```bash

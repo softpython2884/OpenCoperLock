@@ -78,9 +78,38 @@ say "${BOLD}OpenCoperLock setup wizard${RST} — dedicated-server install (PM2 +
 hr
 [[ "$PKG" == apt ]] || warn "Non-Debian system detected ($ID_LIKE). Package installs are skipped; install prerequisites yourself."
 
+# ── Resume support ───────────────────────────────────────────────────────────
+# All later steps are idempotent, so if the wizard crashes part-way (e.g. a package
+# install failed) you can simply re-run it and resume with the exact same configuration
+# instead of re-answering everything. Answers + generated secrets are saved (0600) to a
+# state file after Step 1 and removed on success.
+STATE_FILE="$ROOT_DIR/.wizard-state"
+RESUME=false
+STATE_VARS=(TOPO WEB_DOMAIN API_DOMAIN APP_URL NEXT_PUBLIC_API_URL SETUP_NGINX SETUP_TLS
+  WEB_PORT API_PORT ADMIN_EMAIL ADMIN_PASSWORD DB_CHOICE DB_PROVISION DB_NAME DB_USER
+  DB_PASS APP_USER DATABASE_URL STORAGE_BASE STORAGE_PATH QUARANTINE_PATH QUOTA_GB CAP_GB
+  DEFAULT_USER_QUOTA_BYTES GLOBAL_STORAGE_CAP_BYTES CLAMAV_ENABLED VIRUSTOTAL_API_KEY
+  CERTBOT_EMAIL MASTER_KEY SESSION_SECRET)
+save_state() {
+  umask 077
+  : > "$STATE_FILE"
+  local v
+  for v in "${STATE_VARS[@]}"; do printf '%s=%q\n' "$v" "${!v-}" >> "$STATE_FILE"; done
+}
+if [[ -f "$STATE_FILE" ]]; then
+  if ask_yn 'An unfinished setup was found. Resume with the saved configuration?' 'Y'; then
+    # shellcheck disable=SC1090
+    source "$STATE_FILE"; RESUME=true
+    ok 'Resuming with the saved configuration (every step is idempotent).'
+  else
+    rm -f "$STATE_FILE"; warn 'Starting fresh; previous saved configuration discarded.'
+  fi
+fi
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. COLLECT ANSWERS  (everything up front; the API URL must be known before build)
 # ─────────────────────────────────────────────────────────────────────────────
+if ! $RESUME; then
 info "Step 1 / 8 — Configuration questions"
 say "${DIM}Press Enter to accept the [default].${RST}"
 say ""
@@ -199,6 +228,10 @@ fi
 MASTER_KEY="$(openssl rand -base64 32)"
 SESSION_SECRET="$(openssl rand -base64 32)"
 
+# Persist everything so a crash in a later step can be resumed without re-asking.
+save_state
+fi  # end "if ! $RESUME" — questions are skipped when resuming
+
 # ── Summary & confirm ────────────────────────────────────────────────────────
 say ""; hr; info "Review"
 say "  Topology            : $([[ $TOPO == 1 ]] && echo 'two subdomains' || { [[ $TOPO == 2 ]] && echo 'single domain + /api' || echo 'local only'; })"
@@ -212,7 +245,9 @@ say "  Per-user quota      : ${QUOTA_GB} GiB    Global cap: ${CAP_GB} GiB"
 say "  ClamAV / VirusTotal : $([[ $CLAMAV_ENABLED == true ]] && echo on || echo off) / $([[ -n $VIRUSTOTAL_API_KEY ]] && echo set || echo off)"
 say "  nginx / TLS         : $([[ $SETUP_NGINX == true ]] && echo yes || echo no) / $([[ $SETUP_TLS == true ]] && echo yes || echo no)"
 hr
-ask_yn 'Proceed with these settings?' 'Y' || die 'Aborted by user.'
+if ! $RESUME; then
+  ask_yn 'Proceed with these settings?' 'Y' || die 'Aborted by user.'
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. PREREQUISITES
@@ -319,6 +354,8 @@ SQL
     say ""; info "Step 3 / 8 — Using existing database (skipped provisioning)"
     ;;
 esac
+# Capture the (possibly newly chosen) DATABASE_URL so a later crash resumes with it.
+save_state
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. STORAGE DIRECTORIES
@@ -480,6 +517,9 @@ info "Starting PM2 processes"
 pm2 start ecosystem.config.cjs
 pm2 save
 warn "To restart OpenCoperLock automatically on reboot, run the command pm2 printed above (pm2 startup)."
+
+# Install succeeded — drop the resume state (it holds secrets in cleartext).
+rm -f "$STATE_FILE"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 say ""; hr

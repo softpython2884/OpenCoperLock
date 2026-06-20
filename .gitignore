@@ -25,6 +25,8 @@ storage/
 quarantine/
 # Project-local PostgreSQL cluster (created by scripts/postgres-local.sh)
 /.postgres/
+# Setup-wizard resume state (contains secrets; removed on successful install)
+/.wizard-state
 
 # Prisma
 apps/api/prisma/*.db

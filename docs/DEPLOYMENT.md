@@ -126,8 +126,17 @@ bash scripts/setup-wizard.sh
 It asks for your domain(s), admin account, storage path and limits, then offers to
 install Node/pnpm/PM2/PostgreSQL/nginx/certbot as needed. Secrets (`MASTER_KEY`,
 `SESSION_SECRET`, DB password) are generated for you and written to a `0600` `.env`.
-Re-run it any time; it backs up an existing `.env` first. The sections below document
-the same steps manually.
+Re-run it any time; it backs up an existing `.env` first.
+
+**If it crashes part-way** (e.g. a package install fails), just run it again: it saved
+your answers and generated secrets to a `0600` `.wizard-state` file and will offer to
+**resume with the same configuration** — every step is idempotent. The state file is
+removed automatically once the install completes.
+
+**Running as root:** PostgreSQL refuses to run as root. When you launch the wizard as root
+and choose the project-local database, it creates (or reuses) an unprivileged system user
+to own and run the cluster, and PM2 drops to that user for the `postgres` process — so the
+whole flow works from a root shell.
 
 ## Bare-metal with PM2 (dedicated server)
 

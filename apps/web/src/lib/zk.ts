@@ -13,7 +13,8 @@
  */
 
 const PBKDF2_ITERATIONS = 210_000; // OWASP-recommended floor for PBKDF2-SHA256
-const SALT = 'opencoperlock.zk.v1'; // domain-separation salt (per-vault salt is future work)
+// Legacy fixed salt for vaults created before per-vault salts existed (zkSalt === null).
+const LEGACY_SALT = 'opencoperlock.zk.v1';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -30,8 +31,11 @@ function fromB64(b64: string): Uint8Array<ArrayBuffer> {
   return view;
 }
 
-/** Derive a non-extractable AES-GCM vault key from the user's passphrase. */
-export async function deriveVaultKey(passphrase: string): Promise<CryptoKey> {
+/**
+ * Derive a non-extractable AES-GCM vault key from the user's passphrase and the vault's
+ * per-vault salt (or the legacy fixed salt for older vaults where `zkSalt` is null).
+ */
+export async function deriveVaultKey(passphrase: string, zkSalt: string | null): Promise<CryptoKey> {
   const baseKey = await crypto.subtle.importKey(
     'raw',
     enc.encode(passphrase),
@@ -40,7 +44,12 @@ export async function deriveVaultKey(passphrase: string): Promise<CryptoKey> {
     ['deriveKey'],
   );
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: enc.encode(SALT), iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    {
+      name: 'PBKDF2',
+      salt: enc.encode(zkSalt ?? LEGACY_SALT),
+      iterations: PBKDF2_ITERATIONS,
+      hash: 'SHA-256',
+    },
     baseKey,
     { name: 'AES-GCM', length: 256 },
     false,

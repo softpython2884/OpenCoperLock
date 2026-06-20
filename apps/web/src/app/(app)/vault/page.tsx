@@ -54,7 +54,8 @@ export default function VaultPage() {
     if (!passphrase) return;
     setError(null);
     try {
-      const key = await deriveVaultKey(passphrase);
+      const vault = vaults.find((v) => v.id === folderId);
+      const key = await deriveVaultKey(passphrase, vault?.zkSalt ?? null);
       setVaultKey(key);
       setActiveVault(folderId);
       await openVault(folderId, key);

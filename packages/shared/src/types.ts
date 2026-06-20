@@ -26,6 +26,8 @@ export interface PublicFolder {
   name: string;
   parentId: string | null;
   isZeroKnowledge: boolean;
+  /** Per-vault PBKDF2 salt for ZK folders (null for normal folders / legacy vaults). */
+  zkSalt: string | null;
   createdAt: string;
 }
 

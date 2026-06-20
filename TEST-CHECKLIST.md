@@ -131,4 +131,11 @@ were hardened.
 - [ ] **Direct API access blocked**: when `API_HOST=127.0.0.1`, the API port is not
       reachable from outside the host — only nginx can reach it.
 
+## Stronger Zero-Knowledge vaults (lot 5)
+
+- [ ] **Per-vault salt**: create two vaults → each gets a distinct salt (each derives an
+      independent key from the same passphrase). Upload/download in a new vault still works.
+- [ ] **Backward compatible**: a vault created before this change (no salt) still unlocks
+      with its passphrase (uses the legacy salt). New vaults use a random per-vault salt.
+
 <!-- New features are appended below as they are built. -->

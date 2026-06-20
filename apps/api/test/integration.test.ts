@@ -222,6 +222,17 @@ runIf('API integration', () => {
       expect(ok.statusCode).toBe(200);
       expect(ok.json().folder.name).toBe('top');
     });
+
+    it('gives each vault its own ZK salt and normal folders none', async () => {
+      await createUser({ email: 'vs2@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 'vs2@test.local', 'correct-horse-battery');
+      const normal = await app.inject({ method: 'POST', url: '/folders', headers: authHeaders(auth), payload: { name: 'plain' } });
+      expect(normal.json().folder.zkSalt).toBeNull();
+      const v1 = await app.inject({ method: 'POST', url: '/folders', headers: authHeaders(auth), payload: { name: 'vaultA', isZeroKnowledge: true } });
+      const v2 = await app.inject({ method: 'POST', url: '/folders', headers: authHeaders(auth), payload: { name: 'vaultB', isZeroKnowledge: true } });
+      expect(typeof v1.json().folder.zkSalt).toBe('string');
+      expect(v1.json().folder.zkSalt).not.toBe(v2.json().folder.zkSalt); // unique per vault
+    });
   });
 
   describe('health', () => {

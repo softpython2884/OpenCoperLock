@@ -110,6 +110,9 @@ model Folder {
   children        Folder[] @relation("FolderChildren")
   name            String
   isZeroKnowledge Boolean  @default(false)
+  // Per-vault random salt for the client's PBKDF2 key derivation (ZK folders only).
+  // Not secret; storing it per vault defeats cross-vault precomputation. null = legacy.
+  zkSalt          String?
   createdAt       DateTime @default(now())
 
   files  FileObject[]

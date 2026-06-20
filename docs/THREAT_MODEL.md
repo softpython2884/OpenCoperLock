@@ -50,7 +50,8 @@ software that overpromises is worse than software that is clear about its bounda
   a tampered/truncated blob surfaces as a stream error at the end of a download rather than
   before the first byte. Storage integrity is the first line of defence.
 - **ZK metadata.** Vault file *sizes* and *counts* are visible to the server (only the
-  content and filenames are encrypted). Per-vault salts and padded sizes are future work.
+  content and filenames are encrypted). Each vault now uses its own random PBKDF2 salt, so
+  passphrase precomputation can't be shared across vaults; padded sizes remain future work.
 - **Lost ZK passphrase.** By design, there is no recovery. The operator cannot help.
 - **VirusTotal hash submission** reveals a file's SHA-256 to a third party when invoked.
   It is opt-in and never uploads file contents.

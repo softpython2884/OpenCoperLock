@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { createFolderSchema, updateFolderSchema } from '@opencoperlock/shared';
+import { createFolderSchema, randomToken, updateFolderSchema } from '@opencoperlock/shared';
 import { prisma } from '../db.js';
 import { parseOr400 } from '../lib/validate.js';
 import { toPublicFolder } from '../lib/serialize.js';
@@ -43,13 +43,16 @@ export const folderRoutes: FastifyPluginAsync = async (app) => {
       if (!parent) return reply.code(404).send({ error: 'Parent folder not found' });
     }
 
+    const isZk = body.isZeroKnowledge ?? false;
     try {
       const folder = await prisma.folder.create({
         data: {
           ownerId: req.user!.id,
           parentId: body.parentId ?? null,
           name: body.name,
-          isZeroKnowledge: body.isZeroKnowledge ?? false,
+          isZeroKnowledge: isZk,
+          // Fresh per-vault salt so each vault's passphrase derivation is independent.
+          zkSalt: isZk ? randomToken(16) : null,
         },
       });
       await audit(req, 'folder.create', { target: folder.id });

@@ -33,7 +33,8 @@ the strongest separation, store it in a secrets manager and inject it at runtime
 Files placed in a vault folder are encrypted **in the browser** with the Web Crypto API
 before they ever leave the device:
 
-- a **vault key** is derived from your passphrase with **PBKDF2-SHA256** (≥210 000 iterations),
+- a **vault key** is derived from your passphrase with **PBKDF2-SHA256** (≥210 000
+  iterations) using a **random per-vault salt** (stored server-side; not secret),
 - each file gets a random AES-256-GCM data key that encrypts the content **and** the filename,
 - that data key is **wrapped with the vault key**.
 

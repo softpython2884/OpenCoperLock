@@ -219,6 +219,22 @@ pm2 logs opencoperlock-api
 pm2 reload ecosystem.config.cjs   # zero-downtime reload after a redeploy
 ```
 
+#### One command for the whole stack
+
+`scripts/ocl.sh` wraps the above so you never have to remember individual process names —
+it drives the entire stack (project-local PostgreSQL, API and web) at once:
+
+```bash
+./scripts/ocl.sh start      # start everything
+./scripts/ocl.sh stop       # stop everything (web/API first, then the database)
+./scripts/ocl.sh restart    # restart everything
+./scripts/ocl.sh reload     # zero-downtime reload (after a redeploy)
+./scripts/ocl.sh status     # process table
+./scripts/ocl.sh logs       # tail all logs (or: logs api | logs web | logs postgres)
+./scripts/ocl.sh update     # git pull + deploy.sh + reload
+./scripts/ocl.sh persist    # pm2 save (then run the printed `pm2 startup` once)
+```
+
 > The API loads the repo-root `.env` itself, so no secrets are stored in the PM2 config.
 > Keep `opencoperlock-api` at a single instance — the Remote-Upload worker must not run in
 > parallel copies.

@@ -54,8 +54,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen font-sans">
         <I18nProvider>
           <AuthProvider>{children}</AuthProvider>
+          <Overlays />
         </I18nProvider>
-        <Overlays />
         <PwaRegister />
       </body>
     </html>

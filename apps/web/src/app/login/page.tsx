@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { ApiError } from '@/lib/api';
+import { Logo } from '@/components/Logo';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -37,9 +38,12 @@ export default function LoginPage() {
   return (
     <div className="grid min-h-screen place-items-center px-4">
       <form onSubmit={onSubmit} className="card w-full max-w-sm space-y-4">
-        <div className="text-center">
-          <h1 className="text-xl font-semibold">OpenCoperLock</h1>
-          <p className="mt-1 text-sm text-neutral-500">Sign in to your private cloud</p>
+        <div className="flex flex-col items-center gap-3 text-center">
+          <Logo size={48} />
+          <div>
+            <h1 className="text-xl font-semibold text-white">OpenCoperLock</h1>
+            <p className="mt-1 text-sm text-zinc-500">Connectez-vous à votre cloud privé</p>
+          </div>
         </div>
         <div>
           <label className="label" htmlFor="email">

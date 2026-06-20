@@ -1,19 +1,31 @@
 import type { Config } from 'tailwindcss';
 
-// Minimalist design system: a small neutral palette + one accent. No animation plugins.
+// Dark-first design system with a violet accent, inspired by a clean vault UI.
 const config: Config = {
+  darkMode: 'class',
   content: ['./src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
         accent: {
-          DEFAULT: '#2563eb',
-          hover: '#1d4ed8',
+          DEFAULT: '#8b5cf6', // violet-500
+          hover: '#7c4dff',
+          soft: 'rgba(139, 92, 246, 0.14)',
+        },
+        ink: {
+          // near-black surfaces with a faint violet tint
+          950: '#0a0a0f',
+          900: '#0e0e15',
+          850: '#13131c',
+          800: '#191925',
         },
       },
       fontFamily: {
         sans: ['ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+      },
+      boxShadow: {
+        glow: '0 0 0 1px rgba(139,92,246,0.25), 0 8px 30px rgba(139,92,246,0.12)',
       },
     },
   },

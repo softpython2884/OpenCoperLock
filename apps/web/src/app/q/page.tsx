@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { API_URL } from '@/lib/api';
+import { Logo } from '@/components/Logo';
 
 /**
  * Standalone, login-free Quick-Upload page. A guest enters an active code, optionally a
@@ -66,8 +67,9 @@ export default function QuickUploadPage() {
   return (
     <div className="grid min-h-screen place-items-center px-4">
       <div className="card w-full max-w-md space-y-4">
-        <div className="text-center">
-          <h1 className="text-xl font-semibold">⚡ Quick-Upload</h1>
+        <div className="flex flex-col items-center gap-2 text-center">
+          <Logo size={44} />
+          <h1 className="text-xl font-semibold text-white">Quick-Upload</h1>
           <p className="mt-1 text-sm text-neutral-500">
             Enter an active code to open a temporary drop zone.
           </p>

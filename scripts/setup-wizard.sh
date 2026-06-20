@@ -329,7 +329,8 @@ case "$DB_PROVISION" in
     # Pre-create .postgres/ owned by that account so a root wizard can hand the cluster off
     # (the script re-execs itself as PG_RUN_USER when invoked as root).
     mkdir -p "$ROOT_DIR/.postgres"
-    [[ $EUID -eq 0 ]] && chown "$APP_USER:$(id -gn "$APP_USER")" "$ROOT_DIR/.postgres"
+    # Recursive in case a previous (failed) attempt left a root-owned .postgres/ behind.
+    [[ $EUID -eq 0 ]] && chown -R "$APP_USER:$(id -gn "$APP_USER")" "$ROOT_DIR/.postgres"
     DATABASE_URL="$(PG_RUN_USER="$APP_USER" DB_NAME="$DB_NAME" DB_USER="$DB_USER" DB_PASS="$DB_PASS" ./scripts/postgres-local.sh init)"
     [[ -n "$DATABASE_URL" ]] || die 'Project-local database provisioning failed.'
     ok "Project-local PostgreSQL ready (${DATABASE_URL##*@})"

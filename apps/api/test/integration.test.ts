@@ -244,6 +244,66 @@ runIf('API integration', () => {
       expect(typeof v1.json().folder.zkSalt).toBe('string');
       expect(v1.json().folder.zkSalt).not.toBe(v2.json().folder.zkSalt); // unique per vault
     });
+
+    it('stores and serves ZK ciphertext byte-for-byte (non-zero size)', async () => {
+      await createUser({ email: 'zkup@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 'zkup@test.local', 'correct-horse-battery');
+      const vault = await app.inject({
+        method: 'POST',
+        url: '/folders',
+        headers: authHeaders(auth),
+        payload: { name: 'vault', isZeroKnowledge: true },
+      });
+      const folderId = vault.json().folder.id as string;
+
+      // The server treats the blob as opaque ciphertext, so any bytes exercise the path.
+      const cipher = Buffer.from('this-pretends-to-be-encrypted-bytes-0123456789');
+      const form = new FormData();
+      form.append(
+        'meta',
+        JSON.stringify({ folderId, encryptedName: 'iv.ct', iv: 'aXY=', wrappedKey: 'aXY=.d3I=', encMode: 'ZK' }),
+      );
+      form.append('file', cipher, { filename: 'blob', contentType: 'application/octet-stream' });
+      const up = await app.inject({
+        method: 'POST',
+        url: '/zk/files',
+        payload: form.getBuffer(),
+        headers: { ...form.getHeaders(), ...authHeaders(auth) },
+      });
+      expect(up.statusCode).toBe(201);
+
+      const list = await app.inject({ method: 'GET', url: `/zk/files?folderId=${folderId}`, headers: { cookie: auth.cookie } });
+      const entry = list.json().files[0];
+      expect(entry.sizeBytes).toBe(cipher.length); // regression guard: must NOT be 0
+      expect(entry.iv).toBe('aXY=');
+      expect(entry.wrappedKey).toBe('aXY=.d3I=');
+      expect(entry.encryptedName).toBe('iv.ct');
+
+      const blob = await app.inject({ method: 'GET', url: `/zk/files/${entry.id}/blob`, headers: { cookie: auth.cookie } });
+      expect(Buffer.from(blob.rawPayload).equals(cipher)).toBe(true); // byte-for-byte round-trip
+    });
+
+    it('rejects a ZK upload that exceeds the quota', async () => {
+      await createUser({ email: 'zkq@test.local', password: 'correct-horse-battery', quotaBytes: 8n });
+      const auth = await login(app, 'zkq@test.local', 'correct-horse-battery');
+      const vault = await app.inject({
+        method: 'POST',
+        url: '/folders',
+        headers: authHeaders(auth),
+        payload: { name: 'vault', isZeroKnowledge: true },
+      });
+      const folderId = vault.json().folder.id as string;
+      const form = new FormData();
+      form.append('meta', JSON.stringify({ folderId, encryptedName: 'iv.ct', iv: 'aXY=', wrappedKey: 'aXY=.d3I=', encMode: 'ZK' }));
+      form.append('file', Buffer.alloc(64), { filename: 'blob', contentType: 'application/octet-stream' });
+      const up = await app.inject({
+        method: 'POST',
+        url: '/zk/files',
+        payload: form.getBuffer(),
+        headers: { ...form.getHeaders(), ...authHeaders(auth) },
+      });
+      expect(up.statusCode).toBe(413);
+    });
   });
 
   describe('health', () => {

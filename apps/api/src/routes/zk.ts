@@ -12,16 +12,34 @@ import { adjustUsage, remainingAllowance } from '../services/quota.js';
 import { trashFile } from '../services/trash.js';
 import { audit } from '../services/audit.js';
 import { FileTooLargeError } from '../services/ingest.js';
-import type { Readable } from 'node:stream';
+import { Transform, pipeline, type Readable } from 'node:stream';
 
-/** Cap a stream at `maxBytes`, destroying it (and signalling) if exceeded. */
+/**
+ * Cap a stream at `maxBytes`, failing (with FileTooLargeError) if exceeded. Implemented as a
+ * pass-through Transform that counts bytes as they flow through, then returned for the consumer
+ * to pipe into storage.
+ *
+ * NOTE: do not count by adding a raw `source.on('data')` listener and returning the same stream
+ * — that flips the source into flowing mode and the bytes get consumed before the consumer's
+ * pipeline attaches, so nothing is written (this caused ZK uploads to store 0 bytes). We wire
+ * source -> limiter with stream.pipeline whose callback absorbs the terminal error (so an
+ * over-size source can't surface as an uncaught exception); the error still tears down the
+ * limiter, so the consumer's pipeline rejects with it and the upload returns 413.
+ */
 function capStream(source: Readable, maxBytes: number): Readable {
   let total = 0;
-  source.on('data', (chunk: Buffer) => {
-    total += chunk.length;
-    if (total > maxBytes) source.destroy(new FileTooLargeError());
+  const limiter = new Transform({
+    transform(chunk: Buffer, _enc, cb) {
+      total += chunk.length;
+      if (total > maxBytes) {
+        cb(new FileTooLargeError());
+        return;
+      }
+      cb(null, chunk);
+    },
   });
-  return source;
+  pipeline(source, limiter, () => {});
+  return limiter;
 }
 
 export const zkRoutes: FastifyPluginAsync = async (app) => {
@@ -54,40 +72,49 @@ export const zkRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // POST /zk/files — multipart with a `meta` JSON field followed by the `file` blob.
+  // We use req.file(): it exposes fields that arrived before the file (our `meta`) and hands
+  // back the file stream to consume in place. (Iterating req.parts() and breaking would let
+  // the iterator drain the unread file stream, writing zero bytes — the ZK "0 B" bug.)
   app.post('/files', async (req, reply) => {
-    let meta: unknown;
-    let blob: Readable | undefined;
-    let blobPart: Awaited<ReturnType<typeof req.file>> | undefined;
+    const data = await req.file();
+    if (!data) return reply.code(400).send({ error: 'No file provided' });
 
-    for await (const part of req.parts()) {
-      if (part.type === 'field' && part.fieldname === 'meta') {
-        try {
-          meta = JSON.parse(part.value as string);
-        } catch {
-          return reply.code(400).send({ error: 'Invalid meta JSON' });
-        }
-      } else if (part.type === 'file') {
-        blobPart = part;
-        blob = part.file;
-        break; // the file part must be sent last
-      }
+    const metaRaw = (data.fields?.meta as { value?: string } | undefined)?.value;
+    let meta: unknown;
+    try {
+      meta = JSON.parse(metaRaw ?? '');
+    } catch {
+      data.file.resume(); // drain so the request can finish cleanly
+      return reply.code(400).send({ error: 'Invalid meta JSON' });
     }
 
     const parsed = zkFileMetaSchema.safeParse(meta);
-    if (!parsed.success) return reply.code(400).send({ error: 'Invalid ZK metadata' });
-    if (!blob || !blobPart) return reply.code(400).send({ error: 'No file provided' });
+    if (!parsed.success) {
+      data.file.resume();
+      return reply.code(400).send({ error: 'Invalid ZK metadata' });
+    }
 
     const folder = await prisma.folder.findFirst({
       where: { id: parsed.data.folderId, ownerId: req.user!.id, isZeroKnowledge: true },
     });
-    if (!folder) return reply.code(404).send({ error: 'Vault folder not found' });
+    if (!folder) {
+      data.file.resume();
+      return reply.code(404).send({ error: 'Vault folder not found' });
+    }
 
     const allowance = await remainingAllowance(req.user!.id);
-    if (allowance <= 0) return reply.code(413).send({ error: 'Storage quota exhausted' });
+    if (allowance <= 0) {
+      data.file.resume();
+      return reply.code(413).send({ error: 'Storage quota exhausted' });
+    }
 
     const storageKey = newStorageKey();
     try {
-      const { bytesWritten } = await app.ctx.storage.write(storageKey, capStream(blob, allowance));
+      const { bytesWritten } = await app.ctx.storage.write(storageKey, capStream(data.file, allowance));
+      if (bytesWritten === 0) {
+        await app.ctx.storage.delete(storageKey).catch(() => {});
+        return reply.code(400).send({ error: 'Empty file' });
+      }
       const file = await prisma.fileObject.create({
         data: {
           ownerId: req.user!.id,

@@ -5,19 +5,22 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { FolderLock, Share2, Globe, Settings, ShieldCheck, LogOut, Menu, X, Trash2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+import { useT } from '@/lib/i18n';
 import { Wordmark } from '@/components/Wordmark';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { StatusBanner } from '@/components/StatusBanner';
 import { formatBytes } from '@opencoperlock/shared/client';
 
 const NAV = [
-  { href: '/drive', label: 'Mes Espaces', icon: FolderLock },
-  { href: '/shares', label: 'Partages', icon: Share2 },
-  { href: '/remote', label: 'Remote', icon: Globe },
-  { href: '/trash', label: 'Corbeille', icon: Trash2 },
+  { href: '/drive', labelKey: 'nav.spaces', icon: FolderLock },
+  { href: '/shares', labelKey: 'nav.shares', icon: Share2 },
+  { href: '/remote', labelKey: 'nav.remote', icon: Globe },
+  { href: '/trash', labelKey: 'nav.trash', icon: Trash2 },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
+  const { t } = useT();
   const router = useRouter();
   const pathname = usePathname();
   const [drawer, setDrawer] = useState(false);
@@ -36,7 +39,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   const items = [...NAV];
-  if (user.role === 'ADMIN') items.push({ href: '/admin', label: 'Administration', icon: ShieldCheck });
+  if (user.role === 'ADMIN') items.push({ href: '/admin', labelKey: 'nav.admin', icon: ShieldCheck });
 
   const quotaPct =
     user.quotaBytes && user.quotaBytes > 0
@@ -44,7 +47,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       : 0;
   const initials = user.email.slice(0, 2).toUpperCase();
 
-  const NavLink = ({ href, label, icon: Icon }: (typeof items)[number]) => {
+  const NavLink = ({ href, labelKey, icon: Icon }: (typeof items)[number]) => {
     const active = pathname === href || pathname.startsWith(href + '/');
     return (
       <Link
@@ -54,7 +57,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         }`}
       >
         <Icon size={18} strokeWidth={2} />
-        {label}
+        {t(labelKey)}
       </Link>
     );
   };
@@ -85,14 +88,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           }`}
         >
           <Settings size={18} strokeWidth={2} />
-          Paramètres
+          {t('nav.settings')}
         </Link>
       </nav>
 
       <div className="space-y-3 px-3 pb-4">
+        <div className="flex justify-end px-2">
+          <LanguageSwitcher />
+        </div>
         <div className="px-2">
           <div className="mb-1 flex justify-between text-[11px] text-zinc-500">
-            <span>Stockage</span>
+            <span>{t('nav.storage')}</span>
             <span>
               {formatBytes(user.usedBytes)}
               {user.quotaBytes ? ` / ${formatBytes(user.quotaBytes)}` : ''}
@@ -110,11 +116,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-zinc-100">{user.email}</p>
             <p className="text-[11px] text-zinc-500">
-              {user.role === 'ADMIN' ? 'Administrateur' : 'Utilisateur'}
+              {user.role === 'ADMIN' ? t('role.admin') : t('role.user')}
             </p>
           </div>
           <button
-            title="Se déconnecter"
+            title={t('common.signout')}
             className="rounded-lg p-1.5 text-zinc-400 transition hover:bg-white/5 hover:text-zinc-100"
             onClick={async () => {
               await logout();

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/lib/auth';
+import { I18nProvider } from '@/lib/i18n';
 import { Overlays } from '@/components/ui/overlays';
 import { PwaRegister } from '@/components/PwaRegister';
 
@@ -51,7 +52,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="fr" className="dark">
       <body className="min-h-screen font-sans">
-        <AuthProvider>{children}</AuthProvider>
+        <I18nProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </I18nProvider>
         <Overlays />
         <PwaRegister />
       </body>

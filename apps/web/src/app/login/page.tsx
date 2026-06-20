@@ -5,12 +5,15 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowUpRight, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+import { useT } from '@/lib/i18n';
 import { ApiError } from '@/lib/api';
 import { Logo } from '@/components/Logo';
 import { Wordmark } from '@/components/Wordmark';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 
 export default function LoginPage() {
   const { login } = useAuth();
+  const { t } = useT();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -29,9 +32,9 @@ export default function LoginPage() {
     } catch (err) {
       if (err instanceof ApiError && (err.code === 'TOTP_REQUIRED' || err.code === 'TOTP_INVALID')) {
         setNeedTotp(true);
-        setError(err.code === 'TOTP_INVALID' ? 'Code incorrect. Réessayez.' : null);
+        setError(err.code === 'TOTP_INVALID' ? t('login.codeIncorrect') : null);
       } else {
-        setError(err instanceof ApiError ? err.message : 'Connexion impossible');
+        setError(err instanceof ApiError ? err.message : t('login.failed'));
       }
     } finally {
       setBusy(false);
@@ -46,14 +49,14 @@ export default function LoginPage() {
             <Logo size={52} />
             <div>
               <Wordmark className="text-2xl" />
-              <p className="mt-2 text-sm text-zinc-500">Connectez-vous à votre cloud privé</p>
+              <p className="mt-2 text-sm text-zinc-500">{t('login.subtitle')}</p>
             </div>
           </div>
 
           <form onSubmit={onSubmit} className="card space-y-4">
             <div>
               <label className="label" htmlFor="email">
-                Email
+                {t('login.email')}
               </label>
               <input
                 id="email"
@@ -67,7 +70,7 @@ export default function LoginPage() {
             </div>
             <div>
               <label className="label" htmlFor="password">
-                Mot de passe
+                {t('login.password')}
               </label>
               <input
                 id="password"
@@ -82,28 +85,26 @@ export default function LoginPage() {
             {needTotp && (
               <div>
                 <label className="label" htmlFor="totp">
-                  Code à deux facteurs
+                  {t('login.totp')}
                 </label>
                 <input
                   id="totp"
                   inputMode="numeric"
                   autoComplete="one-time-code"
                   className="input tracking-widest"
-                  placeholder="123456 ou code de secours"
+                  placeholder={t('login.totpPlaceholder')}
                   value={totp}
                   onChange={(e) => setTotp(e.target.value)}
                   autoFocus
                 />
-                <p className="mt-1.5 text-xs text-zinc-500">
-                  Saisissez le code à 6 chiffres de votre application, ou un code de secours.
-                </p>
+                <p className="mt-1.5 text-xs text-zinc-500">{t('login.totpHint')}</p>
               </div>
             )}
             {error && (
               <p className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-300">{error}</p>
             )}
             <button type="submit" className="btn-primary w-full" disabled={busy}>
-              {busy ? 'Connexion…' : needTotp ? 'Vérifier' : 'Se connecter'}
+              {busy ? t('login.signingIn') : needTotp ? t('login.verify') : t('common.signin')}
             </button>
           </form>
 
@@ -113,7 +114,7 @@ export default function LoginPage() {
           >
             <span className="flex items-center gap-2">
               <ShieldCheck size={16} className="text-violet-300" />
-              Vous avez un code Quick-Upload ?
+              {t('login.quickPrompt')}
             </span>
             <ArrowUpRight size={16} className="text-zinc-500" />
           </Link>
@@ -122,14 +123,15 @@ export default function LoginPage() {
 
       <footer className="border-t border-white/[0.06] px-4 py-5">
         <div className="mx-auto flex max-w-sm flex-col items-center gap-2 text-center text-xs text-zinc-500">
+          <LanguageSwitcher className="mb-1" />
           <nav className="flex flex-wrap justify-center gap-x-4 gap-y-1">
-            <Link href="/legal" className="hover:text-zinc-300">À propos</Link>
-            <Link href="/legal/terms" className="hover:text-zinc-300">Conditions</Link>
-            <Link href="/legal/privacy" className="hover:text-zinc-300">Confidentialité</Link>
-            <Link href="/legal/license" className="hover:text-zinc-300">Licence</Link>
+            <Link href="/legal" className="hover:text-zinc-300">{t('legal.about')}</Link>
+            <Link href="/legal/terms" className="hover:text-zinc-300">{t('legal.terms')}</Link>
+            <Link href="/legal/privacy" className="hover:text-zinc-300">{t('legal.privacy')}</Link>
+            <Link href="/legal/license" className="hover:text-zinc-300">{t('legal.license')}</Link>
           </nav>
           <p>
-            Open-source (AGPLv3) · par{' '}
+            {t('login.openSource')}{' '}
             <a href="https://forgenet.fr" target="_blank" rel="noreferrer" className="text-violet-300 hover:underline">
               Forge Network
             </a>

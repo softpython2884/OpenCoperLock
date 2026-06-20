@@ -138,4 +138,21 @@ were hardened.
 - [ ] **Backward compatible**: a vault created before this change (no salt) still unlocks
       with its passphrase (uses the legacy salt). New vaults use a random per-vault salt.
 
+## Project-local PostgreSQL on a random port (lot 6)
+
+For hosts where ports are scarce: the wizard can run a dedicated PostgreSQL inside the
+project (`.postgres/`) on a random free port, supervised by PM2.
+
+- [ ] **Wizard**: at the PostgreSQL step choose "Project-local DB". It picks a random free
+      port, creates the cluster + role + database, and writes the generated `DATABASE_URL`
+      (with that port) into `.env`.
+- [ ] **PM2**: `pm2 status` shows `opencoperlock-postgres` running alongside the api/web.
+- [ ] **Random port**: `cat .postgres/port` shows the chosen port; it also appears in the
+      `DATABASE_URL` in `.env`. Nothing needed port 5432 to be free.
+- [ ] **Manual path**: `DB_NAME=… DB_USER=… ./scripts/postgres-local.sh init` prints a
+      `DATABASE_URL`; `./scripts/deploy.sh` migrates/seeds (starting the cluster if needed),
+      then `pm2 start ecosystem.config.cjs` runs everything.
+- [ ] **Survives reboot**: after `pm2 save && pm2 startup`, a reboot brings the database and
+      app back up.
+
 <!-- New features are appended below as they are built. -->

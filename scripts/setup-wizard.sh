@@ -125,21 +125,38 @@ done
 
 # Database
 say ""; info "PostgreSQL"
-DB_MODE="$(ask 'Provision a local database for me? (yes) or use an existing DATABASE_URL (no)' 'yes')"
-DATABASE_URL=''; CREATE_DB=false
+say "  1) Project-local DB    — runs inside the project on a random free port, supervised"
+say "                           by PM2. Best when the usual ports are already taken."
+say "  2) System PostgreSQL   — create a database/user on the host's PostgreSQL service."
+say "  3) Existing DATABASE_URL — point at a database you already have."
+DB_CHOICE="$(ask 'Choose 1, 2 or 3' '1')"
+DATABASE_URL=''; DB_PROVISION='local'
 DB_NAME='opencoperlock'; DB_USER='opencoperlock'; DB_PASS=''
-if [[ "$DB_MODE" =~ ^[Yy] ]]; then
-  CREATE_DB=true
-  DB_NAME="$(ask 'Database name' 'opencoperlock')"
-  DB_USER="$(ask 'Database user' 'opencoperlock')"
-  # Restrict identifiers to a safe character set (they go into SQL).
-  [[ "$DB_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "Invalid database name (use letters, digits, underscore)."
-  [[ "$DB_USER" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "Invalid database user (use letters, digits, underscore)."
-  DB_PASS="$(openssl rand -hex 16)"
-  DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@localhost:5432/${DB_NAME}"
-else
-  while [[ -z "$DATABASE_URL" ]]; do DATABASE_URL="$(ask 'Existing DATABASE_URL')"; done
-fi
+case "$DB_CHOICE" in
+  1)
+    DB_PROVISION='local'
+    DB_NAME="$(ask 'Database name' 'opencoperlock')"
+    DB_USER="$(ask 'Database user' 'opencoperlock')"
+    [[ "$DB_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "Invalid database name (letters, digits, underscore)."
+    [[ "$DB_USER" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "Invalid database user (letters, digits, underscore)."
+    DB_PASS="$(openssl rand -hex 16)"
+    # The port (and thus DATABASE_URL) is chosen at provisioning time (Step 3).
+    ;;
+  2)
+    DB_PROVISION='system'
+    DB_NAME="$(ask 'Database name' 'opencoperlock')"
+    DB_USER="$(ask 'Database user' 'opencoperlock')"
+    [[ "$DB_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "Invalid database name (letters, digits, underscore)."
+    [[ "$DB_USER" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "Invalid database user (letters, digits, underscore)."
+    DB_PASS="$(openssl rand -hex 16)"
+    DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@localhost:5432/${DB_NAME}"
+    ;;
+  3)
+    DB_PROVISION='existing'
+    while [[ -z "$DATABASE_URL" ]]; do DATABASE_URL="$(ask 'Existing DATABASE_URL')"; done
+    ;;
+  *) die "Invalid choice: $DB_CHOICE" ;;
+esac
 
 # Storage
 say ""; info "Storage & limits"
@@ -177,7 +194,7 @@ say "  Topology            : $([[ $TOPO == 1 ]] && echo 'two subdomains' || { [[
 say "  API URL (browser)   : ${NEXT_PUBLIC_API_URL}"
 say "  Web / API ports     : ${WEB_PORT} / ${API_PORT}"
 say "  Admin email         : ${ADMIN_EMAIL}"
-say "  Database            : $([[ $CREATE_DB == true ]] && echo "create local '${DB_NAME}'" || echo 'existing (provided URL)')"
+say "  Database            : $(case $DB_PROVISION in local) echo "project-local '${DB_NAME}' (random port, PM2)";; system) echo "system PostgreSQL '${DB_NAME}'";; *) echo 'existing (provided URL)';; esac)"
 say "  Storage path        : ${STORAGE_PATH}"
 say "  Per-user quota      : ${QUOTA_GB} GiB    Global cap: ${CAP_GB} GiB"
 say "  ClamAV / VirusTotal : $([[ $CLAMAV_ENABLED == true ]] && echo on || echo off) / $([[ -n $VIRUSTOTAL_API_KEY ]] && echo set || echo off)"
@@ -228,11 +245,14 @@ if $CLAMAV_ENABLED && ! command -v clamdscan >/dev/null 2>&1; then
   fi
 fi
 
-# PostgreSQL
-if $CREATE_DB && ! command -v psql >/dev/null 2>&1; then
-  if [[ "$PKG" == apt ]] && ask_yn 'PostgreSQL not found. Install it?' 'Y'; then
+# PostgreSQL binaries (needed for system provisioning and for a project-local cluster).
+if [[ "$DB_PROVISION" != existing ]] && ! command -v initdb >/dev/null 2>&1 \
+   && ! ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1; then
+  if [[ "$PKG" == apt ]] && ask_yn 'PostgreSQL is not installed. Install it?' 'Y'; then
     apt_install postgresql postgresql-contrib
-    $SUDO systemctl enable --now postgresql
+    # The project-local cluster does not use the system service; stop it to free port 5432
+    # if the operator wants, but leave it as-is by default.
+    [[ "$DB_PROVISION" == system ]] && $SUDO systemctl enable --now postgresql || true
   fi
 fi
 
@@ -243,11 +263,18 @@ if $SETUP_TLS && ! command -v certbot >/dev/null 2>&1 && [[ "$PKG" == apt ]]; th
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. DATABASE PROVISIONING
 # ─────────────────────────────────────────────────────────────────────────────
-if $CREATE_DB; then
-  say ""; info "Step 3 / 8 — Creating PostgreSQL database & user"
-  need_sudo
-  # Create role if missing, set password, create db owned by it. Idempotent.
-  $SUDO -u postgres psql -v ON_ERROR_STOP=1 <<SQL || die 'Database provisioning failed.'
+case "$DB_PROVISION" in
+  local)
+    say ""; info "Step 3 / 8 — Creating a project-local PostgreSQL (random port)"
+    # postgres-local.sh must run as the unprivileged app user; it prints the DATABASE_URL.
+    DATABASE_URL="$(DB_NAME="$DB_NAME" DB_USER="$DB_USER" DB_PASS="$DB_PASS" ./scripts/postgres-local.sh init)"
+    [[ -n "$DATABASE_URL" ]] || die 'Project-local database provisioning failed.'
+    ok "Project-local PostgreSQL ready (${DATABASE_URL##*@})"
+    ;;
+  system)
+    say ""; info "Step 3 / 8 — Creating PostgreSQL database & user on the system service"
+    need_sudo
+    $SUDO -u postgres psql -v ON_ERROR_STOP=1 <<SQL || die 'Database provisioning failed.'
 DO \$\$ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${DB_USER}') THEN
     CREATE ROLE "${DB_USER}" LOGIN PASSWORD '${DB_PASS}';
@@ -258,10 +285,12 @@ END \$\$;
 SELECT 'CREATE DATABASE "${DB_NAME}" OWNER "${DB_USER}"'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${DB_NAME}')\gexec
 SQL
-  ok "Database '${DB_NAME}' ready"
-else
-  say ""; info "Step 3 / 8 — Using existing database (skipped provisioning)"
-fi
+    ok "Database '${DB_NAME}' ready"
+    ;;
+  *)
+    say ""; info "Step 3 / 8 — Using existing database (skipped provisioning)"
+    ;;
+esac
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. STORAGE DIRECTORIES

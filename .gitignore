@@ -23,6 +23,8 @@ next-env.d.ts
 /data/
 storage/
 quarantine/
+# Project-local PostgreSQL cluster (created by scripts/postgres-local.sh)
+/.postgres/
 
 # Prisma
 apps/api/prisma/*.db

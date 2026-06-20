@@ -56,11 +56,38 @@ pnpm --filter @opencoperlock/api build
 echo "==> Building web (Next standalone)"
 pnpm --filter @opencoperlock/web build
 
+# Make sure the database is reachable for migrate/seed. If it's a project-local cluster
+# that isn't running yet (first install), start it temporarily; on a redeploy it's already
+# up (PM2-managed) so we leave it alone.
+db_reachable() {
+  local hp="${DATABASE_URL#*@}"; hp="${hp%%/*}"
+  local host="${hp%%:*}"; local port="${hp##*:}"
+  [[ "$port" == "$host" ]] && port=5432
+  (exec 3<>"/dev/tcp/${host}/${port}") 2>/dev/null
+}
+STARTED_LOCAL_PG=false
+if ! db_reachable; then
+  if [[ -f .postgres/data/PG_VERSION ]]; then
+    echo "==> Starting project-local PostgreSQL for setup"
+    ./scripts/postgres-local.sh ctl-start
+    STARTED_LOCAL_PG=true
+  else
+    echo "ERROR: the database in DATABASE_URL is not reachable, and no project-local" >&2
+    echo "       cluster exists (.postgres/). Start your database or re-run the wizard." >&2
+    exit 1
+  fi
+fi
+
 echo "==> Applying database migrations"
 pnpm --filter @opencoperlock/api prisma:migrate
 
 echo "==> Seeding first admin (idempotent)"
 pnpm --filter @opencoperlock/api db:seed
+
+if [[ "$STARTED_LOCAL_PG" == true ]]; then
+  echo "==> Stopping project-local PostgreSQL (PM2 will supervise it)"
+  ./scripts/postgres-local.sh ctl-stop
+fi
 
 # Ensure storage directories exist and are writable by the current user.
 mkdir -p "${STORAGE_PATH:-$ROOT/data/storage}" "${QUARANTINE_PATH:-$ROOT/data/quarantine}"

@@ -40,8 +40,22 @@ function readEnv(file) {
 
 const env = readEnv(path.join(root, '.env'));
 
+// If a project-local PostgreSQL cluster exists (created by scripts/postgres-local.sh on a
+// random port), let PM2 supervise it too, ahead of the API.
+const hasLocalPostgres = fs.existsSync(path.join(root, '.postgres', 'data', 'PG_VERSION'));
+const localPostgresApp = {
+  name: 'opencoperlock-postgres',
+  cwd: root,
+  script: 'scripts/postgres-local.sh',
+  args: 'start',
+  interpreter: 'bash',
+  autorestart: true,
+  max_restarts: 10,
+};
+
 module.exports = {
   apps: [
+    ...(hasLocalPostgres ? [localPostgresApp] : []),
     {
       name: 'opencoperlock-api',
       cwd: path.join(root, 'apps/api'),

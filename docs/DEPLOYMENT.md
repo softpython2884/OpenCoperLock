@@ -146,6 +146,24 @@ npm i -g pm2
 # (optional) clamav-daemon if you want antivirus scanning.
 ```
 
+### Database options
+
+The wizard offers three ways to get a database, picked during setup:
+
+1. **Project-local PostgreSQL (recommended on busy hosts).** A dedicated cluster is created
+   inside the repo under `.postgres/`, listening on `127.0.0.1` on a **random free port**
+   chosen at install time, and supervised by **PM2** alongside the app. Nothing needs port
+   5432 (or any fixed port) to be free. Managed with `scripts/postgres-local.sh`.
+2. **System PostgreSQL.** A database + user are created on the host's PostgreSQL service.
+3. **Existing `DATABASE_URL`.** Point at a database you already run.
+
+For the manual path, the project-local cluster can be created directly:
+
+```bash
+DB_NAME=opencoperlock DB_USER=opencoperlock ./scripts/postgres-local.sh init   # prints DATABASE_URL
+# put that DATABASE_URL in .env, then ./scripts/deploy.sh && pm2 start ecosystem.config.cjs
+```
+
 ### 2. Configure
 
 ```bash
@@ -156,7 +174,8 @@ cp .env.example .env
 
 Edit `.env`:
 
-- `DATABASE_URL` — point at your local Postgres.
+- `DATABASE_URL` — your database (for a project-local cluster this is generated for you,
+  with the random port baked in).
 - `MASTER_KEY`, `SESSION_SECRET` — `openssl rand -base64 32` each.
 - `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
 - `APP_URL` — your public site URL, e.g. `https://copper.forgenet.fr`.

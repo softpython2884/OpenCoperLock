@@ -69,6 +69,7 @@ import { confirm, prompt, choose, toast } from '@/components/ui/overlays';
 import { DropOverlay } from '@/components/drive/DropOverlay';
 import { CommandPalette, type PaletteItem } from '@/components/drive/CommandPalette';
 import { ShortcutsHelp } from '@/components/drive/ShortcutsHelp';
+import { VersionHistory } from '@/components/drive/VersionHistory';
 
 interface ZkFile {
   id: string;
@@ -125,6 +126,7 @@ export default function EspacesPage() {
   const [dragging, setDragging] = useState(false);
   const [viewing, setViewing] = useState<ViewerSource | null>(null);
   const [shareLink, setShareLink] = useState<string | null>(null);
+  const [versionsFor, setVersionsFor] = useState<PublicFile | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   // selection / clipboard / overlays
@@ -751,31 +753,6 @@ export default function EspacesPage() {
       setError(err instanceof ApiError ? err.message : t('drive.shareFailed'));
     }
   }
-  async function versions(f: PublicFile) {
-    try {
-      const res = await api.get<{ versions: { id: string; sizeBytes: number; createdAt: string }[] }>(`/files/${f.id}/versions`);
-      if (res.versions.length === 0) {
-        toast(t('drive.noVersions'), 'info');
-        return;
-      }
-      const pick = await choose<string>({
-        title: t('drive.versionsTitle', { name: f.name }),
-        message: t('drive.versionsMsg'),
-        options: res.versions.map((v) => ({
-          value: v.id,
-          label: new Date(v.createdAt).toLocaleString(),
-          description: formatBytes(v.sizeBytes),
-        })),
-      });
-      if (!pick) return;
-      await api.post(`/files/${f.id}/versions/${pick}/restore`);
-      await reloadCurrent();
-      toast(t('drive.versionRestored'), 'success');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : t('drive.versionsFailed'));
-    }
-  }
-
   // ── Bulk actions ─────────────────────────────────────────────────────────────
   async function bulkDelete() {
     const items = entriesByKeys([...selected]);
@@ -897,7 +874,7 @@ export default function EspacesPage() {
   // ── Keyboard shortcuts ───────────────────────────────────────────────────────
   // A ref keeps the latest handler so we register the window listener only once.
   const keyHandler = (e: KeyboardEvent) => {
-    if (paletteOpen || helpOpen || viewing || askPass || shareLink) return;
+    if (paletteOpen || helpOpen || viewing || askPass || shareLink || versionsFor) return;
     if (document.querySelector('[class*="z-[100]"]')) return; // an in-app dialog is open
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === 'k') {
@@ -938,6 +915,13 @@ export default function EspacesPage() {
       void duplicateSelection();
       return;
     }
+    // Escape = step back: drop the selection first, otherwise go up one level (or leave the space).
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (selected.size > 0) setSelected(new Set());
+      else goParent();
+      return;
+    }
     if (needPass) return;
     switch (e.key) {
       case 'ArrowDown':
@@ -974,9 +958,6 @@ export default function EspacesPage() {
           e.preventDefault();
           renameByKey([...selected][0]!);
         }
-        break;
-      case 'Escape':
-        setSelected(new Set());
         break;
       default:
         break;
@@ -1230,7 +1211,7 @@ export default function EspacesPage() {
                         { label: t('drive.actionMove'), icon: FolderInput, onClick: () => move('file', e.file.id) },
                         { label: t('drive.actionDuplicate'), icon: Files, onClick: () => void duplicateFile(e.file.id, e.file.name, e.file.mimeType, currentFolderId!, true).then(reloadCurrent) },
                         { label: t('drive.actionShare'), icon: Share2, onClick: () => share('file', e.file.id) },
-                        { label: t('drive.actionVersions'), icon: History, onClick: () => versions(e.file) },
+                        { label: t('drive.actionVersions'), icon: History, onClick: () => setVersionsFor(e.file) },
                         { label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => deleteFile(e.file.id) },
                       ]}
                     />
@@ -1295,6 +1276,13 @@ export default function EspacesPage() {
       )}
 
       {shareLink && <ShareLinkModal link={shareLink} onClose={() => setShareLink(null)} />}
+      {versionsFor && (
+        <VersionHistory
+          file={{ id: versionsFor.id, name: versionsFor.name, mimeType: versionsFor.mimeType }}
+          onClose={() => setVersionsFor(null)}
+          onRestored={reloadCurrent}
+        />
+      )}
       {paletteOpen && <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} />}
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
       {viewing && <FileViewer source={viewing} onClose={() => setViewing(null)} />}

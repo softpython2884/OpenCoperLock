@@ -72,9 +72,12 @@ export function CommandPalette({ items, onClose }: { items: PaletteItem[]; onClo
   }, [active]);
 
   return (
-    <div className="fixed inset-0 z-[70] grid place-items-start justify-center bg-black/60 p-4 pt-[12vh]" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[70] grid place-items-start justify-center bg-ink-950/80 p-4 pt-[12vh] backdrop-blur-sm"
+      onClick={onClose}
+    >
       <div
-        className="w-full max-w-xl overflow-hidden rounded-xl border border-white/[0.08] bg-[#111118] shadow-xl"
+        className="w-full max-w-xl overflow-hidden rounded-xl border border-white/10 bg-[#15151d] shadow-2xl ring-1 ring-black/40"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-white/10 px-3.5">

@@ -64,12 +64,13 @@ import {
 } from '@/lib/zk';
 import { fileVisual } from '@/lib/fileType';
 import { FileViewer, type ViewerSource } from '@/components/FileViewer';
-import { Menu } from '@/components/ui/Menu';
 import { confirm, prompt, choose, toast } from '@/components/ui/overlays';
 import { DropOverlay } from '@/components/drive/DropOverlay';
 import { CommandPalette, type PaletteItem } from '@/components/drive/CommandPalette';
 import { ShortcutsHelp } from '@/components/drive/ShortcutsHelp';
 import { VersionHistory } from '@/components/drive/VersionHistory';
+import { ContextMenu } from '@/components/drive/ContextMenu';
+import { Menu, type MenuItem } from '@/components/ui/Menu';
 
 interface ZkFile {
   id: string;
@@ -135,6 +136,7 @@ export default function EspacesPage() {
   const [clipboard, setClipboard] = useState<Clipboard | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
 
   // passphrase prompt
   const [askPass, setAskPass] = useState<PublicFolder | null>(null);
@@ -871,10 +873,70 @@ export default function EspacesPage() {
     }
   }
 
+  // ── Menu items (shared by the "⋮" overflow menu and the right-click context menu) ──
+  function folderMenuItems(folder: PublicFolder): MenuItem[] {
+    return [
+      { label: t('drive.actionRename'), icon: Pencil, onClick: () => void renameFolder(folder) },
+      ...(!isZk ? [{ label: t('drive.actionMove'), icon: FolderInput, onClick: () => void move('folder', folder.id) }] : []),
+      ...(!isZk ? [{ label: t('drive.actionShare'), icon: Share2, onClick: () => void share('folder', folder.id) }] : []),
+      { label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => void deleteFolder(folder.id) },
+    ];
+  }
+  function fileMenuItems(file: PublicFile): MenuItem[] {
+    return [
+      { label: t('drive.actionRename'), icon: Pencil, onClick: () => void renameFile(file) },
+      { label: t('drive.actionMove'), icon: FolderInput, onClick: () => void move('file', file.id) },
+      { label: t('drive.actionDuplicate'), icon: Files, onClick: () => void duplicateFile(file.id, file.name, file.mimeType, currentFolderId!, true).then(reloadCurrent) },
+      { label: t('drive.actionShare'), icon: Share2, onClick: () => void share('file', file.id) },
+      { label: t('drive.actionVersions'), icon: History, onClick: () => setVersionsFor(file) },
+      { label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => void deleteFile(file.id) },
+    ];
+  }
+  function zkMenuItems(zk: ZkFile): MenuItem[] {
+    return [{ label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => void deleteFile(zk.id) }];
+  }
+  function entryMenuItems(e: Entry): MenuItem[] {
+    return e.kind === 'folder' ? folderMenuItems(e.folder) : e.kind === 'file' ? fileMenuItems(e.file) : zkMenuItems(e.zk);
+  }
+  function bulkMenuItems(): MenuItem[] {
+    const items: MenuItem[] = [{ label: t('drive.bulkDownload'), icon: Download, onClick: () => void bulkDownload() }];
+    if (!isZk) {
+      items.push({ label: t('drive.actionCopy'), icon: Copy, onClick: () => buildClip('copy') });
+      items.push({ label: t('drive.actionCut'), icon: Scissors, onClick: () => buildClip('cut') });
+      items.push({ label: t('drive.bulkMove'), icon: FolderInput, onClick: () => void bulkMove() });
+    }
+    items.push({ label: t('drive.bulkDelete'), icon: Trash2, danger: true, onClick: () => void bulkDelete() });
+    return items;
+  }
+  function backgroundMenuItems(): MenuItem[] {
+    const items: MenuItem[] = [
+      { label: t('drive.cmdNewFile'), icon: FilePlus, onClick: () => void createFileDoc() },
+      { label: t('drive.cmdNewFolder'), icon: FolderPlus, onClick: () => void createFolder() },
+      { label: t('drive.cmdImport'), icon: Upload, onClick: () => fileInput.current?.click() },
+    ];
+    if (!isZk && clipboard) items.push({ label: t('drive.scPaste'), icon: ClipboardPaste, onClick: () => void paste() });
+    if (entries.length > 0) items.push({ label: t('drive.scSelectAll'), icon: Check, onClick: () => selectAll() });
+    return items;
+  }
+  function openCtx(ev: React.MouseEvent, items: MenuItem[]) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (items.length > 0) setCtxMenu({ x: ev.clientX, y: ev.clientY, items });
+  }
+  function onEntryContext(ev: React.MouseEvent, e: Entry) {
+    if (selected.has(e.key) && selected.size > 1) {
+      openCtx(ev, bulkMenuItems());
+      return;
+    }
+    setSelected(new Set([e.key]));
+    setAnchorKey(e.key);
+    openCtx(ev, entryMenuItems(e));
+  }
+
   // ── Keyboard shortcuts ───────────────────────────────────────────────────────
   // A ref keeps the latest handler so we register the window listener only once.
   const keyHandler = (e: KeyboardEvent) => {
-    if (paletteOpen || helpOpen || viewing || askPass || shareLink || versionsFor) return;
+    if (paletteOpen || helpOpen || viewing || askPass || shareLink || versionsFor || ctxMenu) return;
     if (document.querySelector('[class*="z-[100]"]')) return; // an in-app dialog is open
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === 'k') {
@@ -1146,7 +1208,10 @@ export default function EspacesPage() {
       ) : entries.length === 0 ? (
         <Empty icon={Upload} title={t('drive.emptyFolderTitle')} hint={t('drive.emptyFolderHint')} />
       ) : view === 'grid' ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div
+          className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
+          onContextMenu={(ev) => !needPass && openCtx(ev, backgroundMenuItems())}
+        >
           {entries.map((e) => (
             <GridCard
               key={e.key}
@@ -1156,11 +1221,12 @@ export default function EspacesPage() {
               sub={e.kind === 'folder' ? undefined : formatBytes(e.size)}
               onClick={(ev) => onEntryClick(ev, e)}
               onDoubleClick={() => openEntry(e)}
+              onContextMenu={(ev) => onEntryContext(ev, e)}
             />
           ))}
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2" onContextMenu={(ev) => !needPass && openCtx(ev, backgroundMenuItems())}>
           {/* column headers */}
           <div className="flex items-center gap-3 px-3 text-xs text-zinc-500">
             <button className="flex items-center gap-1 hover:text-zinc-300" onClick={() => toggleSort('name')}>
@@ -1181,6 +1247,7 @@ export default function EspacesPage() {
               key={e.key}
               onClick={(ev) => onEntryClick(ev, e)}
               onDoubleClick={() => openEntry(e)}
+              onContextMenu={(ev) => onEntryContext(ev, e)}
               className={`row cursor-default ${selected.has(e.key) ? 'bg-accent/[0.08] ring-1 ring-inset ring-accent/40' : ''}`}
             >
               <button className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={(ev) => onNameClick(ev, e)}>
@@ -1191,36 +1258,20 @@ export default function EspacesPage() {
               <span className="w-20 shrink-0 text-right text-xs text-zinc-500">{e.kind === 'folder' ? '—' : formatBytes(e.size)}</span>
               <div className="flex shrink-0 items-center gap-0.5" onClick={(ev) => ev.stopPropagation()}>
                 {e.kind === 'folder' ? (
-                  <Menu
-                    items={[
-                      { label: t('drive.actionRename'), icon: Pencil, onClick: () => renameFolder(e.folder) },
-                      ...(!isZk ? [{ label: t('drive.actionMove'), icon: FolderInput, onClick: () => move('folder', e.folder.id) }] : []),
-                      ...(!isZk ? [{ label: t('drive.actionShare'), icon: Share2, onClick: () => share('folder', e.folder.id) }] : []),
-                      { label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => deleteFolder(e.folder.id) },
-                    ]}
-                  />
+                  <Menu items={folderMenuItems(e.folder)} />
                 ) : e.kind === 'file' ? (
                   <>
                     <IconBtn title={t('drive.open')} icon={Eye} onClick={() => openFile(e.file)} />
                     <a className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100" title={t('drive.actionDownload')} href={api.url(`/files/${e.file.id}/download`)}>
                       <Download size={16} />
                     </a>
-                    <Menu
-                      items={[
-                        { label: t('drive.actionRename'), icon: Pencil, onClick: () => renameFile(e.file) },
-                        { label: t('drive.actionMove'), icon: FolderInput, onClick: () => move('file', e.file.id) },
-                        { label: t('drive.actionDuplicate'), icon: Files, onClick: () => void duplicateFile(e.file.id, e.file.name, e.file.mimeType, currentFolderId!, true).then(reloadCurrent) },
-                        { label: t('drive.actionShare'), icon: Share2, onClick: () => share('file', e.file.id) },
-                        { label: t('drive.actionVersions'), icon: History, onClick: () => setVersionsFor(e.file) },
-                        { label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => deleteFile(e.file.id) },
-                      ]}
-                    />
+                    <Menu items={fileMenuItems(e.file)} />
                   </>
                 ) : (
                   <>
                     <IconBtn title={t('drive.open')} icon={Eye} onClick={() => openZk(e.zk)} />
                     <IconBtn title={t('drive.actionDownload')} icon={Download} onClick={() => downloadZk(e.zk)} />
-                    <Menu items={[{ label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => deleteFile(e.zk.id) }]} />
+                    <Menu items={zkMenuItems(e.zk)} />
                   </>
                 )}
               </div>
@@ -1286,6 +1337,7 @@ export default function EspacesPage() {
       {paletteOpen && <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} />}
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
       {viewing && <FileViewer source={viewing} onClose={() => setViewing(null)} />}
+      {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxMenu.items} onClose={() => setCtxMenu(null)} />}
       <DropOverlay show={dragging} />
     </div>
   );
@@ -1387,6 +1439,7 @@ function GridCard({
   selected,
   onClick,
   onDoubleClick,
+  onContextMenu,
 }: {
   iconNode: React.ReactNode;
   name: string;
@@ -1394,11 +1447,13 @@ function GridCard({
   selected?: boolean;
   onClick?: (e: React.MouseEvent) => void;
   onDoubleClick?: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   return (
     <div
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
       className={`card flex cursor-default select-none flex-col items-center gap-2 py-5 text-center transition hover:border-white/15 hover:bg-white/[0.04] ${
         selected ? 'bg-accent/[0.08] ring-1 ring-inset ring-accent/40' : ''
       }`}

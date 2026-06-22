@@ -73,18 +73,42 @@ body {
   background-attachment: fixed;
 }
 
-/* Thin, unobtrusive scrollbars */
+/* Custom scrollbars — slim, accent-aware, fade-to-violet on hover. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  scrollbar-color: rgba(139, 92, 246, 0.35) transparent;
 }
 *::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.13);
   border-radius: 9999px;
+  /* transparent border carves a little breathing room around the thumb */
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  transition: background-color 0.15s;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.55);
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Custom text selection — violet tint to match the accent. */
+::selection {
+  background: rgba(139, 92, 246, 0.32);
+  color: #fff;
+}
+::-moz-selection {
+  background: rgba(139, 92, 246, 0.32);
+  color: #fff;
 }
 
 @layer components {

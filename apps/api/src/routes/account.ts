@@ -3,7 +3,7 @@
  * permanently delete your account. Both are scoped strictly to the requesting user.
  */
 import type { FastifyPluginAsync } from 'fastify';
-import { passwordConfirmSchema, createQuickCodeSchema, randomCode } from '@opencoperlock/shared';
+import { passwordConfirmSchema, createQuickCodeSchema } from '@opencoperlock/shared';
 import { prisma } from '../db.js';
 import { parseOr400 } from '../lib/validate.js';
 import { verifyPassword, hashPassword } from '../services/password.js';
@@ -11,6 +11,7 @@ import { remainingRecoveryCodes } from '../services/recovery.js';
 import { toPublicFile, toPublicFolder, toPublicShare, toPublicUser, toPublicQuickCode } from '../lib/serialize.js';
 import { clearSessionCookie } from '../lib/cookies.js';
 import { audit } from '../services/audit.js';
+import { generateUniqueQuickCode, isCodeTakenError } from '../services/quickCode.js';
 
 export const accountRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', app.requireAuth);
@@ -42,25 +43,31 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
-    const codeValue = body.code ?? randomCode();
+    const codeValue = body.code ?? (await generateUniqueQuickCode());
     if (body.code) {
       const clash = await prisma.quickUploadCode.findUnique({ where: { code: codeValue } });
       if (clash) return reply.code(409).send({ error: 'This code is already in use' });
     }
 
-    const code = await prisma.quickUploadCode.create({
-      data: {
-        code: codeValue,
-        createdById: req.user!.id,
-        targetFolderId: body.targetFolderId ?? null,
-        maxBytes: body.maxBytes == null ? null : BigInt(body.maxBytes),
-        expiresAt: body.expiresAt ?? null,
-        usageLimit: body.usageLimit ?? null,
-        passwordHash: body.password ? await hashPassword(body.password) : null,
-      },
-    });
-    await audit(req, 'account.quickcode.create', { target: code.id });
-    return reply.code(201).send({ code: toPublicQuickCode(code) });
+    try {
+      const code = await prisma.quickUploadCode.create({
+        data: {
+          code: codeValue,
+          createdById: req.user!.id,
+          targetFolderId: body.targetFolderId ?? null,
+          maxBytes: body.maxBytes == null ? null : BigInt(body.maxBytes),
+          expiresAt: body.expiresAt ?? null,
+          usageLimit: body.usageLimit ?? null,
+          passwordHash: body.password ? await hashPassword(body.password) : null,
+        },
+      });
+      await audit(req, 'account.quickcode.create', { target: code.id });
+      return reply.code(201).send({ code: toPublicQuickCode(code) });
+    } catch (err) {
+      // Lost a race for the same custom code between the check and the insert.
+      if (isCodeTakenError(err)) return reply.code(409).send({ error: 'This code is already in use' });
+      throw err;
+    }
   });
 
   app.delete('/quick-codes/:id', async (req, reply) => {

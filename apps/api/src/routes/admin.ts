@@ -2,13 +2,13 @@ import type { FastifyPluginAsync } from 'fastify';
 import {
   createQuickCodeSchema,
   createUserSchema,
-  randomCode,
   updateSettingsSchema,
   updateUserSchema,
 } from '@opencoperlock/shared';
 import { prisma } from '../db.js';
 import { parseOr400 } from '../lib/validate.js';
 import { hashPassword } from '../services/password.js';
+import { generateUniqueQuickCode, isCodeTakenError } from '../services/quickCode.js';
 import { toPublicQuickCode, toPublicUser } from '../lib/serialize.js';
 import { getGlobalCapBytes, getGlobalUsedBytes } from '../services/quota.js';
 import { ensureFastUploadFolder } from '../services/systemFolders.js';
@@ -244,26 +244,31 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     }
 
     // Use the admin's chosen memorable code (already uppercased by the schema), or a
-    // random one. Reject a custom code that's already taken.
-    const codeValue = body.code ?? randomCode();
+    // collision-free generated one. Reject a custom code that's already taken.
+    const codeValue = body.code ?? (await generateUniqueQuickCode());
     if (body.code) {
       const clash = await prisma.quickUploadCode.findUnique({ where: { code: codeValue } });
       if (clash) return reply.code(409).send({ error: 'This code is already in use' });
     }
 
-    const code = await prisma.quickUploadCode.create({
-      data: {
-        code: codeValue,
-        createdById: req.user!.id,
-        targetFolderId: body.targetFolderId ?? null,
-        maxBytes: body.maxBytes == null ? null : BigInt(body.maxBytes),
-        expiresAt: body.expiresAt ?? null,
-        usageLimit: body.usageLimit ?? null,
-        passwordHash: body.password ? await hashPassword(body.password) : null,
-      },
-    });
-    await audit(req, 'admin.quickcode.create', { target: code.id });
-    return reply.code(201).send({ code: toPublicQuickCode(code) });
+    try {
+      const code = await prisma.quickUploadCode.create({
+        data: {
+          code: codeValue,
+          createdById: req.user!.id,
+          targetFolderId: body.targetFolderId ?? null,
+          maxBytes: body.maxBytes == null ? null : BigInt(body.maxBytes),
+          expiresAt: body.expiresAt ?? null,
+          usageLimit: body.usageLimit ?? null,
+          passwordHash: body.password ? await hashPassword(body.password) : null,
+        },
+      });
+      await audit(req, 'admin.quickcode.create', { target: code.id });
+      return reply.code(201).send({ code: toPublicQuickCode(code) });
+    } catch (err) {
+      if (isCodeTakenError(err)) return reply.code(409).send({ error: 'This code is already in use' });
+      throw err;
+    }
   });
 
   app.delete('/quick-codes/:id', async (req, reply) => {

@@ -604,14 +604,69 @@ export default function EspacesPage() {
   }
 
   // ── Selection ───────────────────────────────────────────────────────────────
+  function toggleKey(key: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  // ── Touch long-press selection ───────────────────────────────────────────────
+  // Mobile has no right-click / Ctrl-click, so a long-press toggles selection (and, once a
+  // selection exists, a plain tap toggles too). `pressHandledAt` both de-dupes the two events
+  // a long-press can fire (timer + synthesized contextmenu) and suppresses the click that
+  // follows it. `pointerType` lets the mouse handlers stay desktop-standard.
+  const pressTimer = useRef<number | null>(null);
+  const pressStart = useRef<{ x: number; y: number } | null>(null);
+  const pointerType = useRef<string>('mouse');
+  const pressHandledAt = useRef(0);
+  const clearPress = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  };
+  function pressSelect(key: string) {
+    if (Date.now() - pressHandledAt.current < 700) return; // already handled by the sibling event
+    pressHandledAt.current = Date.now();
+    navigator.vibrate?.(15);
+    toggleKey(key);
+    setAnchorKey(key);
+  }
+  function pressProps(entry: Entry) {
+    return {
+      onPointerDown: (e: React.PointerEvent) => {
+        pointerType.current = e.pointerType;
+        if (e.pointerType !== 'touch') return;
+        pressStart.current = { x: e.clientX, y: e.clientY };
+        clearPress();
+        pressTimer.current = window.setTimeout(() => {
+          clearPress();
+          pressSelect(entry.key);
+        }, 450);
+      },
+      onPointerMove: (e: React.PointerEvent) => {
+        if (!pressStart.current || !pressTimer.current) return;
+        if (Math.abs(e.clientX - pressStart.current.x) > 10 || Math.abs(e.clientY - pressStart.current.y) > 10) clearPress();
+      },
+      onPointerUp: clearPress,
+      onPointerCancel: clearPress,
+      onPointerLeave: clearPress,
+    };
+  }
+
   function onEntryClick(e: React.MouseEvent, entry: Entry) {
+    if (Date.now() - pressHandledAt.current < 700) return; // click synthesized right after a long-press
+    const touch = pointerType.current === 'touch';
+    if (touch && selected.size > 0) {
+      toggleKey(entry.key);
+      setAnchorKey(entry.key);
+      return;
+    }
     if (e.metaKey || e.ctrlKey) {
-      setSelected((prev) => {
-        const next = new Set(prev);
-        if (next.has(entry.key)) next.delete(entry.key);
-        else next.add(entry.key);
-        return next;
-      });
+      toggleKey(entry.key);
       setAnchorKey(entry.key);
     } else if (e.shiftKey) {
       const keys = entries.map((x) => x.key);
@@ -629,6 +684,12 @@ export default function EspacesPage() {
     }
   }
   function onNameClick(e: React.MouseEvent, entry: Entry) {
+    if (Date.now() - pressHandledAt.current < 700) {
+      e.stopPropagation();
+      return;
+    }
+    // In touch selection mode, tapping the name toggles too — let the row handle it.
+    if (pointerType.current === 'touch' && selected.size > 0) return;
     if (e.metaKey || e.ctrlKey || e.shiftKey) return; // let the row handle selection
     e.stopPropagation();
     openEntry(entry);
@@ -1043,6 +1104,12 @@ export default function EspacesPage() {
     if (items.length > 0) setCtxMenu({ x: ev.clientX, y: ev.clientY, items });
   }
   function onEntryContext(ev: React.MouseEvent, e: Entry) {
+    // On touch, a long-press fires `contextmenu` — treat it as select, not a desktop menu.
+    if (pointerType.current === 'touch') {
+      ev.preventDefault();
+      pressSelect(e.key);
+      return;
+    }
     if (selected.has(e.key) && selected.size > 1) {
       openCtx(ev, bulkMenuItems());
       return;
@@ -1342,6 +1409,7 @@ export default function EspacesPage() {
               onClick={(ev) => onEntryClick(ev, e)}
               onDoubleClick={() => openEntry(e)}
               onContextMenu={(ev) => onEntryContext(ev, e)}
+              press={pressProps(e)}
             />
           ))}
         </div>
@@ -1368,6 +1436,7 @@ export default function EspacesPage() {
               onClick={(ev) => onEntryClick(ev, e)}
               onDoubleClick={() => openEntry(e)}
               onContextMenu={(ev) => onEntryContext(ev, e)}
+              {...pressProps(e)}
               className={`row cursor-default ${selected.has(e.key) ? 'bg-accent/[0.08] ring-1 ring-inset ring-accent/40' : ''}`}
             >
               <button className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={(ev) => onNameClick(ev, e)}>
@@ -1560,6 +1629,7 @@ function GridCard({
   onClick,
   onDoubleClick,
   onContextMenu,
+  press,
 }: {
   iconNode: React.ReactNode;
   name: string;
@@ -1568,9 +1638,11 @@ function GridCard({
   onClick?: (e: React.MouseEvent) => void;
   onDoubleClick?: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
+  press?: React.DOMAttributes<HTMLDivElement>;
 }) {
   return (
     <div
+      {...press}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}

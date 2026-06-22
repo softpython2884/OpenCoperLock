@@ -3,16 +3,32 @@
  * permanently delete your account. Both are scoped strictly to the requesting user.
  */
 import type { FastifyPluginAsync } from 'fastify';
-import { passwordConfirmSchema, createQuickCodeSchema, createApiTokenSchema } from '@opencoperlock/shared';
+import {
+  passwordConfirmSchema,
+  createQuickCodeSchema,
+  createApiTokenSchema,
+  createWebhookSchema,
+  assertAllowedUrl,
+  SsrfError,
+} from '@opencoperlock/shared';
 import { prisma } from '../db.js';
 import { parseOr400 } from '../lib/validate.js';
 import { verifyPassword, hashPassword } from '../services/password.js';
 import { remainingRecoveryCodes } from '../services/recovery.js';
-import { toPublicFile, toPublicFolder, toPublicShare, toPublicUser, toPublicQuickCode, toPublicApiToken } from '../lib/serialize.js';
+import {
+  toPublicFile,
+  toPublicFolder,
+  toPublicShare,
+  toPublicUser,
+  toPublicQuickCode,
+  toPublicApiToken,
+  toPublicWebhook,
+} from '../lib/serialize.js';
 import { clearSessionCookie } from '../lib/cookies.js';
 import { audit } from '../services/audit.js';
 import { generateUniqueQuickCode, isCodeTakenError } from '../services/quickCode.js';
 import { generateToken } from '../services/apiToken.js';
+import { sendTestEvent } from '../services/webhooks.js';
 
 export const accountRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', app.requireAuth);
@@ -80,6 +96,56 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
     if (!existing) return reply.code(404).send({ error: 'Code not found' });
     await prisma.quickUploadCode.delete({ where: { id } });
     await audit(req, 'account.quickcode.delete', { target: id });
+    return { ok: true };
+  });
+
+  // ── Outgoing webhooks ────────────────────────────────────────────────────────
+  app.get('/webhooks', async (req) => {
+    const hooks = await prisma.webhook.findMany({ where: { ownerId: req.user!.id }, orderBy: { createdAt: 'desc' } });
+    return { webhooks: hooks.map(toPublicWebhook) };
+  });
+
+  app.post('/webhooks', async (req, reply) => {
+    const body = parseOr400(reply, createWebhookSchema, req.body);
+    if (!body) return;
+    // Reject localhost / private / non-http targets up front (SSRF). Re-checked at send time too.
+    try {
+      assertAllowedUrl(body.url);
+    } catch (err) {
+      if (err instanceof SsrfError) return reply.code(400).send({ error: err.message });
+      throw err;
+    }
+    if (body.folderId) {
+      const folder = await prisma.folder.findFirst({ where: { id: body.folderId, ownerId: req.user!.id } });
+      if (!folder) return reply.code(404).send({ error: 'Folder not found' });
+    }
+    const hook = await prisma.webhook.create({
+      data: {
+        ownerId: req.user!.id,
+        url: body.url,
+        secret: body.secret ?? null,
+        folderId: body.folderId ?? null,
+      },
+    });
+    await audit(req, 'account.webhook.create', { target: hook.id });
+    return reply.code(201).send({ webhook: toPublicWebhook(hook) });
+  });
+
+  app.post('/webhooks/:id/test', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const hook = await prisma.webhook.findFirst({ where: { id, ownerId: req.user!.id } });
+    if (!hook) return reply.code(404).send({ error: 'Webhook not found' });
+    await sendTestEvent(hook);
+    const updated = await prisma.webhook.findUnique({ where: { id } });
+    return { webhook: updated ? toPublicWebhook(updated) : null };
+  });
+
+  app.delete('/webhooks/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const existing = await prisma.webhook.findFirst({ where: { id, ownerId: req.user!.id } });
+    if (!existing) return reply.code(404).send({ error: 'Webhook not found' });
+    await prisma.webhook.delete({ where: { id } });
+    await audit(req, 'account.webhook.delete', { target: id });
     return { ok: true };
   });
 

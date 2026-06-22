@@ -2,21 +2,12 @@ import type { FastifyPluginAsync } from 'fastify';
 import { updateFileSchema } from '@opencoperlock/shared';
 import { prisma } from '../db.js';
 import { parseOr400 } from '../lib/validate.js';
-import { newStorageKey } from '../storage/index.js';
-import {
-  FileTooLargeError,
-  InfectedFileError,
-  ingestPlaintext,
-} from '../services/ingest.js';
+import { FileTooLargeError, InfectedFileError } from '../services/ingest.js';
+import { storeUserFile, QuotaExhaustedError } from '../services/upload.js';
 import { decryptServerFile } from '../services/download.js';
 import { trashFile } from '../services/trash.js';
-import {
-  findVersionTarget,
-  isVersionable,
-  pruneVersions,
-  snapshotVersion,
-} from '../services/versioning.js';
-import { adjustUsage, remainingAllowance } from '../services/quota.js';
+import { pruneVersions, snapshotVersion } from '../services/versioning.js';
+import { adjustUsage } from '../services/quota.js';
 import { toPublicFile } from '../lib/serialize.js';
 import { audit } from '../services/audit.js';
 
@@ -52,63 +43,22 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     const part = await req.file();
     if (!part) return reply.code(400).send({ error: 'No file provided' });
 
-    const allowance = await remainingAllowance(req.user!.id);
-    if (allowance <= 0) return reply.code(413).send({ error: 'Storage quota exhausted' });
-
-    const storageKey = newStorageKey();
     try {
-      const result = await ingestPlaintext(app.ctx, part.file, { maxBytes: allowance, storageKey });
-
-      // Versioning: re-uploading a text-like file under the same name keeps the old
-      // content as a version instead of creating a duplicate row.
-      const existing = isVersionable(part.filename, part.mimetype)
-        ? await findVersionTarget(req.user!.id, folderId ?? null, part.filename)
-        : null;
-
-      if (existing) {
-        await snapshotVersion(existing);
-        const file = await prisma.fileObject.update({
-          where: { id: existing.id },
-          data: {
-            sizeBytes: BigInt(result.sizeBytes),
-            mimeType: part.mimetype,
-            storageKey: result.storageKey,
-            wrappedKey: result.wrappedKey,
-            iv: result.iv,
-            authTag: result.authTag,
-            sha256: result.sha256,
-            avStatus: result.avStatus,
-          },
-        });
-        // New content adds to usage; the retained version keeps the old size.
-        await adjustUsage(req.user!.id, result.sizeBytes);
-        const freed = await pruneVersions(app.ctx, file.id);
-        if (freed > 0) await adjustUsage(req.user!.id, -freed);
-        await audit(req, 'file.version', { target: file.id });
-        return reply.code(201).send({ file: toPublicFile(file) });
-      }
-
-      const file = await prisma.fileObject.create({
-        data: {
-          ownerId: req.user!.id,
-          folderId: folderId ?? null,
-          name: part.filename,
-          sizeBytes: BigInt(result.sizeBytes),
-          mimeType: part.mimetype,
-          storageKey: result.storageKey,
-          encMode: 'SERVER',
-          wrappedKey: result.wrappedKey,
-          iv: result.iv,
-          authTag: result.authTag,
-          sha256: result.sha256,
-          avStatus: result.avStatus,
-        },
+      // Shared pipeline: quota + antivirus + server-side encryption + text-file versioning,
+      // plus outgoing-webhook dispatch — identical to the REST API and WebDAV.
+      const { file, versioned } = await storeUserFile(app.ctx, {
+        ownerId: req.user!.id,
+        folderId: folderId ?? null,
+        stream: part.file,
+        filename: part.filename,
+        mimetype: part.mimetype,
       });
-      await adjustUsage(req.user!.id, result.sizeBytes);
-      await audit(req, 'file.upload', { target: file.id });
+      await audit(req, versioned ? 'file.version' : 'file.upload', { target: file.id });
       return reply.code(201).send({ file: toPublicFile(file) });
     } catch (err) {
-      await app.ctx.storage.delete(storageKey).catch(() => {});
+      if (err instanceof QuotaExhaustedError) {
+        return reply.code(413).send({ error: 'Storage quota exhausted' });
+      }
       if (err instanceof FileTooLargeError) {
         return reply.code(413).send({ error: 'Upload exceeds your available quota' });
       }

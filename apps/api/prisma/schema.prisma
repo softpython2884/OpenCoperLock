@@ -70,6 +70,7 @@ model User {
   shares          ShareLink[]
   recoveryCodes   RecoveryCode[]
   apiTokens       ApiToken[]
+  webhooks        Webhook[]
 
   @@index([email])
 }
@@ -291,6 +292,24 @@ model ApiToken {
   expiresAt  DateTime?
   lastUsedAt DateTime?
   createdAt  DateTime  @default(now())
+
+  @@index([ownerId])
+}
+
+// An outgoing webhook: POSTed when a file lands in the owner's storage (optionally limited to
+// one folder). `secret` (if set) signs the body with HMAC-SHA256. lastStatus/lastError record
+// the most recent delivery for the UI.
+model Webhook {
+  id         String   @id @default(cuid())
+  ownerId    String
+  owner      User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  url        String
+  secret     String?
+  folderId   String?
+  active     Boolean  @default(true)
+  lastStatus Int?
+  lastError  String?
+  createdAt  DateTime @default(now())
 
   @@index([ownerId])
 }

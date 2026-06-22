@@ -143,6 +143,16 @@ export const createApiTokenSchema = z.object({
 });
 export type CreateApiTokenInput = z.infer<typeof createApiTokenSchema>;
 
+/** Register an outgoing webhook fired when a file lands in storage. */
+export const createWebhookSchema = z.object({
+  url: z.string().url().max(2000),
+  // Optional HMAC-SHA256 signing secret.
+  secret: z.string().min(8).max(200).optional(),
+  // Optional: only fire for files landing in this folder.
+  folderId: cuidSchema.nullable().optional(),
+});
+export type CreateWebhookInput = z.infer<typeof createWebhookSchema>;
+
 /** Body sent by an anonymous guest when redeeming a Quick-Upload code. */
 export const quickUploadRedeemSchema = z.object({
   password: z.string().max(256).optional(),

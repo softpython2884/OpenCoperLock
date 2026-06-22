@@ -11,6 +11,7 @@ import type {
   RemoteUploadJob,
   ShareLink,
   User,
+  Webhook,
 } from '@prisma/client';
 import type {
   PublicApiToken,
@@ -20,7 +21,21 @@ import type {
   PublicRemoteJob,
   PublicShare,
   PublicUser,
+  PublicWebhook,
 } from '@opencoperlock/shared';
+
+export function toPublicWebhook(w: Webhook): PublicWebhook {
+  return {
+    id: w.id,
+    url: w.url,
+    hasSecret: w.secret !== null && w.secret.length > 0,
+    folderId: w.folderId,
+    active: w.active,
+    lastStatus: w.lastStatus,
+    lastError: w.lastError,
+    createdAt: w.createdAt.toISOString(),
+  };
+}
 
 export function toPublicApiToken(t: ApiToken): PublicApiToken {
   return {

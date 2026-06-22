@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { PublicQuickCode, PublicFolder, PublicApiToken } from '@opencoperlock/shared/client';
+import type { PublicQuickCode, PublicFolder, PublicApiToken, PublicWebhook } from '@opencoperlock/shared/client';
 import { api, API_URL, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useT } from '@/lib/i18n';
@@ -50,21 +50,25 @@ export default function AccountPage() {
     expiresInDays: '',
   });
   const [newToken, setNewToken] = useState<string | null>(null);
+  const [webhooks, setWebhooks] = useState<PublicWebhook[]>([]);
+  const [nw, setNw] = useState({ url: '', secret: '', folderId: '' });
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [s, sess, qc, fl, tk] = await Promise.all([
+    const [s, sess, qc, fl, tk, wh] = await Promise.all([
       api.get<TwoFaStatus>('/2fa/status'),
       api.get<{ sessions: SessionInfo[] }>('/auth/sessions'),
       api.get<{ codes: PublicQuickCode[] }>('/account/quick-codes'),
       api.get<{ folders: PublicFolder[] }>('/folders'),
       api.get<{ tokens: PublicApiToken[] }>('/account/api-tokens'),
+      api.get<{ webhooks: PublicWebhook[] }>('/account/webhooks'),
     ]);
     setStatus(s);
     setSessions(sess.sessions);
     setCodes(qc.codes);
     setFolders(fl.folders);
     setTokens(tk.tokens);
+    setWebhooks(wh.webhooks);
   }, []);
 
   useEffect(() => {
@@ -319,6 +323,77 @@ export default function AccountPage() {
             </div>
           ))}
           {codes.length === 0 && <p className="py-2 text-sm text-neutral-400">{t('account.noQuickCodes')}</p>}
+        </div>
+      </section>
+
+      {/* Webhooks */}
+      <section className="card space-y-3">
+        <h2 className="font-semibold">{t('account.webhooks')}</h2>
+        <p className="text-sm text-neutral-500">{t('account.webhooksHint')}</p>
+        <div className="flex flex-wrap items-end gap-2">
+          <input
+            className="input min-w-[16rem] flex-1"
+            placeholder="https://exemple.com/hook"
+            value={nw.url}
+            onChange={(e) => setNw({ ...nw, url: e.target.value })}
+          />
+          <input
+            className="input max-w-[12rem]"
+            placeholder={t('account.webhookSecret')}
+            value={nw.secret}
+            onChange={(e) => setNw({ ...nw, secret: e.target.value })}
+          />
+          <select className="input max-w-[13rem]" value={nw.folderId} onChange={(e) => setNw({ ...nw, folderId: e.target.value })}>
+            <option value="">{t('account.webhookAnyFolder')}</option>
+            {folders
+              .filter((f) => !f.isZeroKnowledge)
+              .map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+          </select>
+          <button
+            className="btn-primary"
+            disabled={!nw.url.trim()}
+            onClick={() =>
+              wrap(async () => {
+                await api.post('/account/webhooks', {
+                  url: nw.url.trim(),
+                  secret: nw.secret.trim() || undefined,
+                  folderId: nw.folderId || null,
+                });
+                setNw({ url: '', secret: '', folderId: '' });
+                await load();
+              })
+            }
+          >
+            {t('account.webhookCreate')}
+          </button>
+        </div>
+        <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
+          {webhooks.map((w) => (
+            <div key={w.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+              <div className="min-w-0">
+                <p className="truncate font-mono text-xs text-zinc-200">{w.url}</p>
+                <p className="text-xs text-neutral-400">
+                  {w.hasSecret ? t('account.webhookSigned') : t('account.webhookUnsigned')}
+                  {w.lastStatus !== null
+                    ? ` · ${w.lastError ? t('account.webhookLastError', { error: w.lastError }) : t('account.webhookLastOk', { status: w.lastStatus })}`
+                    : ` · ${t('account.webhookNeverFired')}`}
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <button className="btn-ghost px-2 py-1 text-xs" onClick={() => wrap(() => api.post(`/account/webhooks/${w.id}/test`).then(load))}>
+                  {t('account.webhookTest')}
+                </button>
+                <button className="btn-danger px-2 py-1" onClick={() => wrap(() => api.del(`/account/webhooks/${w.id}`).then(load))}>
+                  {t('account.revoke')}
+                </button>
+              </div>
+            </div>
+          ))}
+          {webhooks.length === 0 && <p className="py-2 text-sm text-neutral-400">{t('account.noWebhooks')}</p>}
         </div>
       </section>
 

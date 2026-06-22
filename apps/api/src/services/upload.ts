@@ -11,6 +11,7 @@ import { newStorageKey } from '../storage/index.js';
 import { ingestPlaintext } from './ingest.js';
 import { adjustUsage, remainingAllowance } from './quota.js';
 import { findVersionTarget, isVersionable, pruneVersions, snapshotVersion } from './versioning.js';
+import { dispatchFileEvent } from './webhooks.js';
 
 export class QuotaExhaustedError extends Error {
   constructor() {
@@ -62,6 +63,7 @@ export async function storeUserFile(ctx: AppContext, opts: StoreFileOpts): Promi
       await adjustUsage(opts.ownerId, result.sizeBytes);
       const freed = await pruneVersions(ctx, file.id);
       if (freed > 0) await adjustUsage(opts.ownerId, -freed);
+      void dispatchFileEvent(opts.ownerId, file, 'file.updated');
       return { file, versioned: true };
     }
 
@@ -82,6 +84,7 @@ export async function storeUserFile(ctx: AppContext, opts: StoreFileOpts): Promi
       },
     });
     await adjustUsage(opts.ownerId, result.sizeBytes);
+    void dispatchFileEvent(opts.ownerId, file, 'file.created');
     return { file, versioned: false };
   } catch (err) {
     await ctx.storage.delete(storageKey).catch(() => {});

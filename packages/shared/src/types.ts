@@ -57,6 +57,18 @@ export interface PublicApiToken {
   createdAt: string;
 }
 
+export interface PublicWebhook {
+  id: string;
+  url: string;
+  /** True when a signing secret is configured (the secret itself is never returned). */
+  hasSecret: boolean;
+  folderId: string | null;
+  active: boolean;
+  lastStatus: number | null;
+  lastError: string | null;
+  createdAt: string;
+}
+
 export interface PublicQuickCode {
   id: string;
   code: string;

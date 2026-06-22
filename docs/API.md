@@ -59,4 +59,33 @@ curl -H "Authorization: Bearer $TOKEN" -OJ "$HOST/api/v1/files/<FILE_ID>/downloa
 - Re-uploading a text file under the same name keeps the previous content as a version.
 - Errors: `401` invalid/expired token, `403` missing scope or wrong folder, `404` not found,
   `413` quota exceeded, `422` file rejected by antivirus.
+
+## Webhooks
+
+In **Account ▸ Webhooks**, register a URL to receive a `POST` when a file lands in your storage
+(optionally limited to one folder). Body:
+
+```json
+{ "event": "file.created", "at": "2026-06-22T12:00:00.000Z", "file": { "id": "…", "name": "…", "sizeBytes": 123, "mimeType": "…" } }
+```
+
+If you set a secret, the body is signed: `X-OpenCoperLock-Signature: sha256=<hex>` (HMAC-SHA256
+of the raw body). Targets must be public URLs (localhost/private addresses are rejected).
+
+## WebDAV
+
+Mount your normal spaces as a network drive (Finder, Windows Explorer, `rsync`/davfs, Cyberduck).
+
+- **URL:** `<HOST>/dav/`
+- **Username:** anything (your email) — it is ignored.
+- **Password:** an API token (`read` + `write`).
+
+```bash
+# Example with rclone
+rclone config create ocl webdav url "$HOST/dav/" vendor other user me pass "$TOKEN"
+rclone copy ./photos ocl:Photos
+```
+
+Notes: vault (Zero-Knowledge) folders are not exposed; `COPY` (drag-duplicate) isn't implemented
+yet (`MOVE`/rename works); locking is accepted but advisory.
 </content>

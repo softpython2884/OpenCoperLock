@@ -341,6 +341,9 @@ const fr: Dict = {
   'account.webhookNeverFired': 'jamais déclenché',
   'account.webhookTest': 'Tester',
   'account.noWebhooks': 'Aucun webhook pour le moment.',
+  'account.webdav': 'WebDAV (disque réseau)',
+  'account.webdavHint': 'Montez vos espaces normaux comme un disque réseau (Finder, Explorateur Windows, rsync…). Les coffres ne sont pas accessibles.',
+  'account.webdavCreds': 'Identifiant : votre e-mail (ignoré). Mot de passe : un jeton d’API (lecture + écriture) créé ci-dessus.',
   'account.yourData': 'Vos données',
   'account.dataHint':
     'Téléchargez une copie des données de votre compte, ou supprimez définitivement votre compte et tous vos fichiers. La suppression est irréversible.',
@@ -817,6 +820,9 @@ const en: Dict = {
   'account.webhookNeverFired': 'never fired',
   'account.webhookTest': 'Test',
   'account.noWebhooks': 'No webhooks yet.',
+  'account.webdav': 'WebDAV (network drive)',
+  'account.webdavHint': 'Mount your normal spaces as a network drive (Finder, Windows Explorer, rsync…). Vaults are not accessible.',
+  'account.webdavCreds': 'Username: your email (ignored). Password: an API token (read + write) created above.',
   'account.yourData': 'Your data',
   'account.dataHint':
     'Download a copy of your account data, or permanently delete your account and all of your files. Deletion cannot be undone.',

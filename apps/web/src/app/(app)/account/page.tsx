@@ -503,6 +503,25 @@ export default function AccountPage() {
         </div>
       </section>
 
+      {/* WebDAV */}
+      <section className="card space-y-2">
+        <h2 className="font-semibold">{t('account.webdav')}</h2>
+        <p className="text-sm text-neutral-500">{t('account.webdavHint')}</p>
+        <div className="flex items-center gap-2">
+          <code className="min-w-0 flex-1 truncate rounded bg-black/20 px-2 py-1 font-mono text-xs text-zinc-200">{`${API_URL}/dav/`}</code>
+          <button
+            className="btn-ghost px-2 py-1 text-xs"
+            onClick={async () => {
+              await navigator.clipboard?.writeText(`${API_URL}/dav/`).catch(() => {});
+              toast(t('account.quickLinkCopied'), 'success');
+            }}
+          >
+            {t('account.quickCopyLink')}
+          </button>
+        </div>
+        <p className="text-xs text-neutral-400">{t('account.webdavCreds')}</p>
+      </section>
+
       {/* Data & privacy (GDPR) */}
       <section className="card space-y-3">
         <h2 className="font-semibold">{t('account.yourData')}</h2>

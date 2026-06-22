@@ -21,6 +21,7 @@ import { twoFactorRoutes } from './routes/twofa.js';
 import { accountRoutes } from './routes/account.js';
 import { adminRoutes } from './routes/admin.js';
 import { apiV1Routes } from './routes/api-v1.js';
+import { webdavRoutes } from './routes/webdav.js';
 
 export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({
@@ -45,7 +46,6 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   app.decorate('ctx', ctx);
 
   await app.register(helmet, { contentSecurityPolicy: false });
-  await app.register(cors, { origin: ctx.env.APP_URL, credentials: true });
   await app.register(cookie, { secret: ctx.env.SESSION_SECRET });
   await app.register(rateLimit, {
     max: ctx.env.RATE_LIMIT_ENABLED ? 300 : 1_000_000,
@@ -62,28 +62,42 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
 
   await app.register(authPlugin);
 
-  // Liveness: the process is up. Readiness: dependencies (DB + storage) are usable.
-  app.get('/health', async () => ({ status: 'ok' }));
-  app.get('/ready', async (_req, reply) => {
-    const report = await getHealth(ctx);
-    return reply.code(report.ready ? 200 : 503).send(report);
-  });
-  // Authenticated status for the UI banner (warnings about degraded components).
-  app.get('/status', { preHandler: app.requireAuth }, async () => getHealth(ctx));
+  // Teach Fastify the WebDAV verbs before the routes that use them are registered.
+  for (const m of ['PROPFIND', 'PROPPATCH', 'MKCOL', 'MOVE', 'COPY', 'LOCK', 'UNLOCK']) {
+    app.addHttpMethod(m, { hasBody: ['PROPFIND', 'PROPPATCH', 'MKCOL', 'LOCK'].includes(m) });
+  }
 
-  await app.register(authRoutes, { prefix: '/auth' });
-  await app.register(folderRoutes, { prefix: '/folders' });
-  await app.register(fileRoutes, { prefix: '/files' });
-  await app.register(trashRoutes, { prefix: '/trash' });
-  await app.register(zkRoutes, { prefix: '/zk' });
-  await app.register(quickRoutes, { prefix: '/quick' });
-  await app.register(remoteRoutes, { prefix: '/remote' });
-  await app.register(shareRoutes, { prefix: '/shares' });
-  await app.register(sharePublicRoutes, { prefix: '/s' });
-  await app.register(twoFactorRoutes, { prefix: '/2fa' });
-  await app.register(accountRoutes, { prefix: '/account' });
-  await app.register(adminRoutes, { prefix: '/admin' });
-  await app.register(apiV1Routes, { prefix: '/api/v1' });
+  // WebDAV is mounted OUTSIDE the CORS scope below: @fastify/cors uses strictPreflight and would
+  // answer every WebDAV OPTIONS with 400/204, hiding the DAV capability headers clients need.
+  await app.register(webdavRoutes, { prefix: '/dav' });
+
+  // Everything browser-facing is wrapped so CORS applies only here (not to WebDAV).
+  await app.register(async (web) => {
+    await web.register(cors, { origin: ctx.env.APP_URL, credentials: true });
+
+    // Liveness: the process is up. Readiness: dependencies (DB + storage) are usable.
+    web.get('/health', async () => ({ status: 'ok' }));
+    web.get('/ready', async (_req, reply) => {
+      const report = await getHealth(ctx);
+      return reply.code(report.ready ? 200 : 503).send(report);
+    });
+    // Authenticated status for the UI banner (warnings about degraded components).
+    web.get('/status', { preHandler: web.requireAuth }, async () => getHealth(ctx));
+
+    await web.register(authRoutes, { prefix: '/auth' });
+    await web.register(folderRoutes, { prefix: '/folders' });
+    await web.register(fileRoutes, { prefix: '/files' });
+    await web.register(trashRoutes, { prefix: '/trash' });
+    await web.register(zkRoutes, { prefix: '/zk' });
+    await web.register(quickRoutes, { prefix: '/quick' });
+    await web.register(remoteRoutes, { prefix: '/remote' });
+    await web.register(shareRoutes, { prefix: '/shares' });
+    await web.register(sharePublicRoutes, { prefix: '/s' });
+    await web.register(twoFactorRoutes, { prefix: '/2fa' });
+    await web.register(accountRoutes, { prefix: '/account' });
+    await web.register(adminRoutes, { prefix: '/admin' });
+    await web.register(apiV1Routes, { prefix: '/api/v1' });
+  });
 
   app.setErrorHandler((err: { statusCode?: number; message?: string }, req, reply) => {
     req.log.error({ err }, 'request failed');

@@ -30,7 +30,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://ocl:ocl@localhost:5432/ocl_test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # No `version:` here — pnpm is pinned via the root package.json `packageManager`
       # field. Specifying both makes pnpm/action-setup fail with a version conflict.
@@ -68,7 +68,7 @@ jobs:
     name: Docker image build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
       - name: Build API image
         uses: docker/build-push-action@v6

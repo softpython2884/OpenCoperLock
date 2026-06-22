@@ -172,6 +172,14 @@ const fr: Dict = {
   'drive.actionMove': 'Déplacer',
   'drive.actionVersions': 'Versions',
   'drive.actionDownload': 'Télécharger',
+  // zip / unzip
+  'drive.zipDownload': 'Télécharger en .zip',
+  'drive.actionExtract': 'Extraire ici',
+  'drive.zipping': 'Compression…',
+  'drive.extracting': 'Extraction…',
+  'drive.extracted': '{n} fichier(s) extrait(s)',
+  'drive.zipFailed': 'Compression impossible',
+  'drive.extractFailed': 'Extraction impossible',
   // new file
   'drive.newFile': 'Fichier',
   'drive.newFileTitle': 'Nouveau fichier',
@@ -616,6 +624,14 @@ const en: Dict = {
   'drive.actionMove': 'Move',
   'drive.actionVersions': 'Versions',
   'drive.actionDownload': 'Download',
+  // zip / unzip
+  'drive.zipDownload': 'Download as .zip',
+  'drive.actionExtract': 'Extract here',
+  'drive.zipping': 'Compressing…',
+  'drive.extracting': 'Extracting…',
+  'drive.extracted': '{n} file(s) extracted',
+  'drive.zipFailed': 'Could not compress',
+  'drive.extractFailed': 'Could not extract',
   // new file
   'drive.newFile': 'File',
   'drive.newFileTitle': 'New file',

@@ -45,9 +45,12 @@ import {
   Files,
   Keyboard,
   ArrowDownUp,
+  Archive,
+  PackageOpen,
   Check,
   X,
 } from 'lucide-react';
+import { zip as fzip, unzip as funzip } from 'fflate';
 import type { PublicFile, PublicFolder } from '@opencoperlock/shared/client';
 import { formatBytes } from '@opencoperlock/shared/client';
 import { api, API_URL, ApiError } from '@/lib/api';
@@ -873,6 +876,111 @@ export default function EspacesPage() {
     }
   }
 
+  // ── Zip / unzip (client-side, so it works for vault files too) ───────────────
+  function zipAsync(files: Record<string, Uint8Array>): Promise<Uint8Array> {
+    return new Promise((resolve, reject) => fzip(files, { level: 6 }, (err, data) => (err ? reject(err) : resolve(data))));
+  }
+  function unzipAsync(data: Uint8Array): Promise<Record<string, Uint8Array>> {
+    return new Promise((resolve, reject) => funzip(data, (err, files) => (err ? reject(err) : resolve(files))));
+  }
+  // fflate yields Uint8Array<ArrayBufferLike>; Blob/File want a plain BlobPart. The bytes are
+  // always ArrayBuffer-backed, so this coercion is safe.
+  const asPart = (u: Uint8Array): BlobPart => u as unknown as BlobPart;
+  function isZip(name: string, mime?: string) {
+    return name.toLowerCase().endsWith('.zip') || mime === 'application/zip' || mime === 'application/x-zip-compressed';
+  }
+  // Decrypt/fetch a single file's raw bytes (folders return null).
+  async function entryBytes(e: Entry): Promise<{ name: string; data: Uint8Array } | null> {
+    if (e.kind === 'file') {
+      const res = await fetch(api.url(`/files/${e.file.id}/download`), { credentials: 'include' });
+      return { name: e.file.name, data: new Uint8Array(await res.arrayBuffer()) };
+    }
+    if (e.kind === 'zk') {
+      const blob = await decryptZkBlob(e.zk);
+      return blob ? { name: zkName(e.zk), data: new Uint8Array(await blob.arrayBuffer()) } : null;
+    }
+    return null;
+  }
+  async function uploadBytes(name: string, data: Uint8Array, folderId: string) {
+    if (isZk) {
+      if (!vaultKey) return;
+      const enc = await encryptFile(vaultKey, new File([asPart(data)], name));
+      const form = new FormData();
+      form.append('meta', JSON.stringify({ folderId, encryptedName: enc.encryptedName, iv: enc.iv, wrappedKey: enc.wrappedKey, encMode: 'ZK' }));
+      form.append('file', enc.blob, 'blob');
+      await api.upload('/zk/files', form);
+    } else {
+      const form = new FormData();
+      form.append('file', new File([asPart(data)], name));
+      await api.upload(`/files?folderId=${folderId}`, form);
+    }
+  }
+  // Compress the selected files into a single .zip download.
+  async function zipSelection() {
+    const items = entriesByKeys([...selected]).filter((e) => e.kind !== 'folder');
+    if (items.length === 0) return;
+    setBusy(t('drive.zipping'));
+    try {
+      const files: Record<string, Uint8Array> = {};
+      for (const e of items) {
+        const b = await entryBytes(e);
+        if (!b) continue;
+        let name = b.name;
+        for (let i = 1; files[name]; i += 1) {
+          const dot = b.name.lastIndexOf('.');
+          name = dot > 0 ? `${b.name.slice(0, dot)} (${i})${b.name.slice(dot)}` : `${b.name} (${i})`;
+        }
+        files[name] = b.data;
+      }
+      saveBlob(new Blob([asPart(await zipAsync(files))], { type: 'application/zip' }), `${activeSpace?.name ?? 'archive'}.zip`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('drive.zipFailed'));
+    } finally {
+      setBusy(null);
+    }
+  }
+  // Extract a .zip into the current folder, recreating its sub-folders.
+  async function extractZip(e: Entry) {
+    if (!currentFolderId) return;
+    setBusy(t('drive.extracting'));
+    try {
+      const archive = await entryBytes(e);
+      if (!archive) return;
+      const entries = await unzipAsync(archive.data);
+      // Cache folder paths → id so each directory is created once.
+      const folderIds = new Map<string, string>([['', currentFolderId]]);
+      const ensurePath = async (dirs: string[]): Promise<string> => {
+        let key = '';
+        let parent = currentFolderId!;
+        for (const d of dirs) {
+          const next = key ? `${key}/${d}` : d;
+          if (!folderIds.has(next)) {
+            const res = await api.post<{ folder: { id: string } }>('/folders', { name: d, parentId: parent, isZeroKnowledge: isZk });
+            folderIds.set(next, res.folder.id);
+          }
+          parent = folderIds.get(next)!;
+          key = next;
+        }
+        return parent;
+      };
+      let count = 0;
+      for (const [path, data] of Object.entries(entries)) {
+        if (path.endsWith('/') || data.length === 0) continue; // directory entry
+        const parts = path.split('/').filter(Boolean);
+        const name = parts.pop()!;
+        const folderId = await ensurePath(parts);
+        await uploadBytes(name, data, folderId);
+        count += 1;
+      }
+      await Promise.all([loadFolders(), reloadCurrent()]);
+      toast(t('drive.extracted', { n: count }), 'success');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('drive.extractFailed'));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   // ── Menu items (shared by the "⋮" overflow menu and the right-click context menu) ──
   function folderMenuItems(folder: PublicFolder): MenuItem[] {
     return [
@@ -887,19 +995,30 @@ export default function EspacesPage() {
       { label: t('drive.actionRename'), icon: Pencil, onClick: () => void renameFile(file) },
       { label: t('drive.actionMove'), icon: FolderInput, onClick: () => void move('file', file.id) },
       { label: t('drive.actionDuplicate'), icon: Files, onClick: () => void duplicateFile(file.id, file.name, file.mimeType, currentFolderId!, true).then(reloadCurrent) },
+      ...(isZip(file.name, file.mimeType)
+        ? [{ label: t('drive.actionExtract'), icon: PackageOpen, onClick: () => void extractZip({ key: `file:${file.id}`, kind: 'file', name: file.name, size: file.sizeBytes, date: 0, file }) }]
+        : []),
       { label: t('drive.actionShare'), icon: Share2, onClick: () => void share('file', file.id) },
       { label: t('drive.actionVersions'), icon: History, onClick: () => setVersionsFor(file) },
       { label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => void deleteFile(file.id) },
     ];
   }
   function zkMenuItems(zk: ZkFile): MenuItem[] {
-    return [{ label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => void deleteFile(zk.id) }];
+    return [
+      ...(isZip(zkName(zk))
+        ? [{ label: t('drive.actionExtract'), icon: PackageOpen, onClick: () => void extractZip({ key: `zk:${zk.id}`, kind: 'zk', name: zkName(zk), size: zk.sizeBytes, date: 0, zk }) }]
+        : []),
+      { label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => void deleteFile(zk.id) },
+    ];
   }
   function entryMenuItems(e: Entry): MenuItem[] {
     return e.kind === 'folder' ? folderMenuItems(e.folder) : e.kind === 'file' ? fileMenuItems(e.file) : zkMenuItems(e.zk);
   }
   function bulkMenuItems(): MenuItem[] {
-    const items: MenuItem[] = [{ label: t('drive.bulkDownload'), icon: Download, onClick: () => void bulkDownload() }];
+    const items: MenuItem[] = [
+      { label: t('drive.bulkDownload'), icon: Download, onClick: () => void bulkDownload() },
+      { label: t('drive.zipDownload'), icon: Archive, onClick: () => void zipSelection() },
+    ];
     if (!isZk) {
       items.push({ label: t('drive.actionCopy'), icon: Copy, onClick: () => buildClip('copy') });
       items.push({ label: t('drive.actionCut'), icon: Scissors, onClick: () => buildClip('cut') });
@@ -1185,6 +1304,7 @@ export default function EspacesPage() {
           <span className="font-medium text-zinc-100">{t('drive.selectedCount', { n: selected.size })}</span>
           <div className="flex-1" />
           <BulkBtn icon={Download} label={t('drive.bulkDownload')} onClick={() => void bulkDownload()} />
+          <BulkBtn icon={Archive} label={t('drive.zipDownload')} onClick={() => void zipSelection()} />
           {!isZk && <BulkBtn icon={Copy} label={t('drive.actionCopy')} onClick={() => buildClip('copy')} />}
           {!isZk && <BulkBtn icon={Scissors} label={t('drive.actionCut')} onClick={() => buildClip('cut')} />}
           {!isZk && <BulkBtn icon={FolderInput} label={t('drive.bulkMove')} onClick={() => void bulkMove()} />}

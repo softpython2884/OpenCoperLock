@@ -270,6 +270,8 @@ model Setting {
   // single-row table (id = "global")
   id                   String   @id @default("global")
   globalStorageCapBytes BigInt  @default(0)
+  // Optional VirusTotal API key set from the admin panel; overrides VIRUSTOTAL_API_KEY in .env.
+  virustotalApiKey     String?
   updatedAt            DateTime @updatedAt
 }
 

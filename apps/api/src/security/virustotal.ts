@@ -13,7 +13,16 @@ export interface VirusTotalReport {
 }
 
 export class VirusTotalClient {
-  constructor(private readonly apiKey: string) {}
+  private apiKey: string;
+
+  constructor(apiKey: string) {
+    this.apiKey = apiKey;
+  }
+
+  /** Swap the API key at runtime (admin can set/clear it from the panel without a restart). */
+  setKey(apiKey: string): void {
+    this.apiKey = apiKey ?? '';
+  }
 
   get enabled(): boolean {
     return this.apiKey.length > 0;

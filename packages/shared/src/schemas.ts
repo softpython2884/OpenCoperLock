@@ -156,7 +156,9 @@ export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 
 export const updateSettingsSchema = z.object({
   // 0 = unlimited.
-  globalStorageCapBytes: z.number().int().nonnegative(),
+  globalStorageCapBytes: z.number().int().nonnegative().optional(),
+  // Empty string clears the stored key (reverting to the .env value, if any).
+  virustotalApiKey: z.string().max(200).optional(),
 });
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
 

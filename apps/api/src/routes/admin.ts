@@ -190,19 +190,37 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
   // ── Global settings ─────────────────────────────────────────────────────--
   app.get('/settings', async () => {
     const setting = await prisma.setting.findUnique({ where: { id: GLOBAL_SETTING_ID } });
-    return { globalStorageCapBytes: Number(setting?.globalStorageCapBytes ?? 0n) };
+    return {
+      globalStorageCapBytes: Number(setting?.globalStorageCapBytes ?? 0n),
+      // Never echo the key back — only whether scanning is currently active.
+      virustotalConfigured: app.ctx.virustotal.enabled,
+    };
   });
 
   app.patch('/settings', async (req, reply) => {
     const body = parseOr400(reply, updateSettingsSchema, req.body);
     if (!body) return;
+    // Build the update from only the provided fields, so the VT key and the cap can be saved
+    // independently from their own forms.
+    const data: { globalStorageCapBytes?: bigint; virustotalApiKey?: string | null } = {};
+    if (body.globalStorageCapBytes !== undefined) data.globalStorageCapBytes = BigInt(body.globalStorageCapBytes);
+    if (body.virustotalApiKey !== undefined) data.virustotalApiKey = body.virustotalApiKey.trim() || null;
+
     const setting = await prisma.setting.upsert({
       where: { id: GLOBAL_SETTING_ID },
-      create: { id: GLOBAL_SETTING_ID, globalStorageCapBytes: BigInt(body.globalStorageCapBytes) },
-      update: { globalStorageCapBytes: BigInt(body.globalStorageCapBytes) },
+      create: { id: GLOBAL_SETTING_ID, ...data },
+      update: data,
     });
+
+    // Apply the key change live: a stored key overrides .env; clearing it reverts to .env.
+    if (body.virustotalApiKey !== undefined) {
+      app.ctx.virustotal.setKey(setting.virustotalApiKey ?? app.ctx.env.VIRUSTOTAL_API_KEY);
+    }
     await audit(req, 'admin.settings.update');
-    return { globalStorageCapBytes: Number(setting.globalStorageCapBytes) };
+    return {
+      globalStorageCapBytes: Number(setting.globalStorageCapBytes),
+      virustotalConfigured: app.ctx.virustotal.enabled,
+    };
   });
 
   // ── Quick-Upload codes ──────────────────────────────────────────────────--

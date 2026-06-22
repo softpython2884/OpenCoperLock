@@ -32,6 +32,8 @@ export default function AdminPage() {
   const [codes, setCodes] = useState<PublicQuickCode[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [cap, setCap] = useState('0');
+  const [vtConfigured, setVtConfigured] = useState(false);
+  const [vtKey, setVtKey] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   // new-user form
@@ -47,7 +49,7 @@ export default function AdminPage() {
       api.get<{ users: PublicUser[] }>('/admin/users'),
       api.get<{ codes: PublicQuickCode[] }>('/admin/quick-codes'),
       api.get<{ logs: AuditEntry[] }>('/admin/audit?limit=50'),
-      api.get<{ globalStorageCapBytes: number }>('/admin/settings'),
+      api.get<{ globalStorageCapBytes: number; virustotalConfigured: boolean }>('/admin/settings'),
       api.get<{ warnings: string[] }>('/admin/alerts'),
     ]);
     setStats(s);
@@ -56,7 +58,7 @@ export default function AdminPage() {
     setAudit(a.logs);
     setCap(String(s.globalCapBytes));
     setAlerts(al.warnings);
-    void settings;
+    setVtConfigured(settings.virustotalConfigured);
   }, []);
 
   useEffect(() => {
@@ -121,6 +123,52 @@ export default function AdminPage() {
             {t('admin.save')}
           </button>
         </div>
+      </section>
+
+      {/* VirusTotal */}
+      <section className="card space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold">{t('admin.vtTitle')}</h2>
+          <span className={`chip ${vtConfigured ? 'bg-emerald-500/10 text-emerald-300' : 'bg-white/[0.05] text-zinc-400'}`}>
+            {vtConfigured ? t('admin.vtActive') : t('admin.vtInactive')}
+          </span>
+        </div>
+        <p className="text-sm text-neutral-500">{t('admin.vtHint')}</p>
+        <div className="flex gap-2">
+          <input
+            className="input font-mono"
+            type="password"
+            placeholder={vtConfigured ? t('admin.vtPlaceholderSet') : t('admin.vtPlaceholder')}
+            value={vtKey}
+            onChange={(e) => setVtKey(e.target.value)}
+          />
+          <button
+            className="btn-primary whitespace-nowrap"
+            onClick={() =>
+              wrap(async () => {
+                const res = await api.patch<{ virustotalConfigured: boolean }>('/admin/settings', { virustotalApiKey: vtKey.trim() });
+                setVtConfigured(res.virustotalConfigured);
+                setVtKey('');
+              })
+            }
+          >
+            {t('admin.save')}
+          </button>
+        </div>
+        {vtConfigured && (
+          <button
+            className="text-xs text-red-300 hover:underline"
+            onClick={() =>
+              wrap(async () => {
+                const res = await api.patch<{ virustotalConfigured: boolean }>('/admin/settings', { virustotalApiKey: '' });
+                setVtConfigured(res.virustotalConfigured);
+                setVtKey('');
+              })
+            }
+          >
+            {t('admin.vtClear')}
+          </button>
+        )}
       </section>
 
       {/* Users */}

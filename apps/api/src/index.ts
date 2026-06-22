@@ -24,6 +24,10 @@ async function main(): Promise<void> {
     await mkdir(env.QUARANTINE_PATH, { recursive: true });
   }
 
+  // A VirusTotal key stored from the admin panel overrides the one from .env.
+  const setting = await prisma.setting.findUnique({ where: { id: 'global' } }).catch(() => null);
+  if (setting?.virustotalApiKey) ctx.virustotal.setKey(setting.virustotalApiKey);
+
   const app = await buildServer(ctx);
   const stopWorker = startRemoteWorker(ctx, app.log);
   const stopMaintenance = startMaintenance(ctx, app.log);

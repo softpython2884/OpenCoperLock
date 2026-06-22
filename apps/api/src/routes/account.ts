@@ -3,18 +3,77 @@
  * permanently delete your account. Both are scoped strictly to the requesting user.
  */
 import type { FastifyPluginAsync } from 'fastify';
-import { passwordConfirmSchema } from '@opencoperlock/shared';
+import { passwordConfirmSchema, createQuickCodeSchema, randomCode } from '@opencoperlock/shared';
 import { prisma } from '../db.js';
 import { parseOr400 } from '../lib/validate.js';
-import { verifyPassword } from '../services/password.js';
+import { verifyPassword, hashPassword } from '../services/password.js';
 import { remainingRecoveryCodes } from '../services/recovery.js';
-import { toPublicFile, toPublicFolder, toPublicShare, toPublicUser } from '../lib/serialize.js';
+import { toPublicFile, toPublicFolder, toPublicShare, toPublicUser, toPublicQuickCode } from '../lib/serialize.js';
 import { clearSessionCookie } from '../lib/cookies.js';
 import { audit } from '../services/audit.js';
 
 export const accountRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', app.requireAuth);
   const secureCookies = app.ctx.env.NODE_ENV === 'production';
+
+  // ── Quick-Upload codes (self-service) ────────────────────────────────────────
+  // Every user manages their OWN Quick-Upload codes here; an anonymous guest with the code
+  // can drop files straight into the chosen folder. Strictly scoped to the requesting user.
+
+  app.get('/quick-codes', async (req) => {
+    const codes = await prisma.quickUploadCode.findMany({
+      where: { createdById: req.user!.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    return { codes: codes.map(toPublicQuickCode) };
+  });
+
+  app.post('/quick-codes', async (req, reply) => {
+    const body = parseOr400(reply, createQuickCodeSchema, req.body);
+    if (!body) return;
+
+    if (body.targetFolderId) {
+      const folder = await prisma.folder.findFirst({
+        where: { id: body.targetFolderId, ownerId: req.user!.id },
+      });
+      if (!folder) return reply.code(404).send({ error: 'Target folder not found' });
+      if (folder.isZeroKnowledge) {
+        return reply.code(400).send({ error: 'A vault cannot be a Quick-Upload target' });
+      }
+    }
+
+    const codeValue = body.code ?? randomCode();
+    if (body.code) {
+      const clash = await prisma.quickUploadCode.findUnique({ where: { code: codeValue } });
+      if (clash) return reply.code(409).send({ error: 'This code is already in use' });
+    }
+
+    const code = await prisma.quickUploadCode.create({
+      data: {
+        code: codeValue,
+        createdById: req.user!.id,
+        targetFolderId: body.targetFolderId ?? null,
+        maxBytes: body.maxBytes == null ? null : BigInt(body.maxBytes),
+        expiresAt: body.expiresAt ?? null,
+        usageLimit: body.usageLimit ?? null,
+        passwordHash: body.password ? await hashPassword(body.password) : null,
+      },
+    });
+    await audit(req, 'account.quickcode.create', { target: code.id });
+    return reply.code(201).send({ code: toPublicQuickCode(code) });
+  });
+
+  app.delete('/quick-codes/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    // Scope the delete to the owner so a user can only remove their own codes.
+    const existing = await prisma.quickUploadCode.findFirst({
+      where: { id, createdById: req.user!.id },
+    });
+    if (!existing) return reply.code(404).send({ error: 'Code not found' });
+    await prisma.quickUploadCode.delete({ where: { id } });
+    await audit(req, 'account.quickcode.delete', { target: id });
+    return { ok: true };
+  });
 
   // GET /account/export — a JSON copy of the user's data (metadata, not file contents).
   app.get('/export', async (req, reply) => {

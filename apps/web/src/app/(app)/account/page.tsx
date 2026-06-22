@@ -6,10 +6,11 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type { PublicQuickCode, PublicFolder } from '@opencoperlock/shared/client';
 import { api, API_URL, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useT } from '@/lib/i18n';
-import { prompt } from '@/components/ui/overlays';
+import { prompt, toast } from '@/components/ui/overlays';
 
 interface TwoFaStatus {
   enabled: boolean;
@@ -38,15 +39,22 @@ export default function AccountPage() {
   const [token, setToken] = useState('');
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [codes, setCodes] = useState<PublicQuickCode[]>([]);
+  const [folders, setFolders] = useState<PublicFolder[]>([]);
+  const [nc, setNc] = useState({ code: '', targetFolderId: '', usageLimit: '' });
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [s, sess] = await Promise.all([
+    const [s, sess, qc, fl] = await Promise.all([
       api.get<TwoFaStatus>('/2fa/status'),
       api.get<{ sessions: SessionInfo[] }>('/auth/sessions'),
+      api.get<{ codes: PublicQuickCode[] }>('/account/quick-codes'),
+      api.get<{ folders: PublicFolder[] }>('/folders'),
     ]);
     setStatus(s);
     setSessions(sess.sessions);
+    setCodes(qc.codes);
+    setFolders(fl.folders);
   }, []);
 
   useEffect(() => {
@@ -221,6 +229,86 @@ export default function AccountPage() {
               )}
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Quick-Upload codes */}
+      <section className="card space-y-3">
+        <h2 className="font-semibold">{t('account.quickCodes')}</h2>
+        <p className="text-sm text-neutral-500">{t('account.quickCodesHint')}</p>
+        <div className="flex flex-wrap items-end gap-2">
+          <input
+            className="input max-w-[12rem] font-mono uppercase tracking-wide"
+            placeholder={t('account.quickCodePlaceholder')}
+            value={nc.code}
+            onChange={(e) => setNc({ ...nc, code: e.target.value.toUpperCase() })}
+          />
+          <select
+            className="input max-w-[14rem]"
+            value={nc.targetFolderId}
+            onChange={(e) => setNc({ ...nc, targetFolderId: e.target.value })}
+          >
+            <option value="">{t('account.quickCodeDefaultFolder')}</option>
+            {folders
+              .filter((f) => !f.isZeroKnowledge)
+              .map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+          </select>
+          <input
+            className="input max-w-[9rem]"
+            type="number"
+            min={1}
+            placeholder={t('account.quickCodeUsageLimit')}
+            value={nc.usageLimit}
+            onChange={(e) => setNc({ ...nc, usageLimit: e.target.value })}
+          />
+          <button
+            className="btn-primary"
+            onClick={() =>
+              wrap(async () => {
+                await api.post('/account/quick-codes', {
+                  code: nc.code.trim() || undefined,
+                  targetFolderId: nc.targetFolderId || null,
+                  usageLimit: Number(nc.usageLimit) || null,
+                });
+                setNc({ code: '', targetFolderId: '', usageLimit: '' });
+              })
+            }
+          >
+            {t('account.quickCodeCreate')}
+          </button>
+        </div>
+        <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
+          {codes.map((c) => (
+            <div key={c.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+              <div className="min-w-0">
+                <code className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono dark:bg-neutral-800">{c.code}</code>{' '}
+                <span className="text-xs text-neutral-400">
+                  {c.usageLimit !== null
+                    ? t('account.quickUsedLimited', { count: c.usageCount, limit: c.usageLimit })
+                    : t('account.quickUsed', { count: c.usageCount })}
+                </span>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  className="btn-ghost px-2 py-1"
+                  onClick={async () => {
+                    await navigator.clipboard?.writeText(`${window.location.origin}/q?code=${encodeURIComponent(c.code)}`).catch(() => {});
+                    toast(t('account.quickLinkCopied'), 'success');
+                  }}
+                >
+                  {t('account.quickCopyLink')}
+                </button>
+                <button className="btn-danger px-2 py-1" onClick={() => wrap(() => api.del(`/account/quick-codes/${c.id}`))}>
+                  {t('account.revoke')}
+                </button>
+              </div>
+            </div>
+          ))}
+          {codes.length === 0 && <p className="py-2 text-sm text-neutral-400">{t('account.noQuickCodes')}</p>}
         </div>
       </section>
 

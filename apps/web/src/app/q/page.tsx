@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { UploadCloud, CheckCircle2 } from 'lucide-react';
 import { API_URL } from '@/lib/api';
@@ -24,6 +24,13 @@ export default function QuickUploadPage() {
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  // Prefill the code from a shared `/q?code=XXX` link (read from the URL to avoid pulling the
+  // whole page into a Suspense boundary, which useSearchParams would require).
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get('code');
+    if (c) setCode(c.toUpperCase());
+  }, []);
 
   async function check(e: React.FormEvent) {
     e.preventDefault();

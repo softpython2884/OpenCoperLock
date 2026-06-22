@@ -183,7 +183,16 @@ export function startUpdate(env: Env): StartUpdateResult {
     }
   }
 
-  const child = spawn('bash', [script], {
+  // Spawn the updater so it OUTLIVES the PM2 reload it will trigger. PM2 restarts a process by
+  // tree-killing its descendants, so the script must NOT stay a child of this API process —
+  // otherwise reloading the API kills the updater mid-flight (freezing the status at "verifying").
+  // We launch it from a throwaway `bash -c` that backgrounds the real script and exits at once;
+  // once that shell exits the script is reparented to init (ppid 1), and `setsid` detaches it
+  // from our session/process-group, so the reload can no longer reap it.
+  const q = (s: string) => `'${s.split("'").join("'\\''")}'`;
+  const run = `bash ${q(script)} </dev/null >>${q(join(repoRoot, '.update.log'))} 2>&1 &`;
+  const launch = `if command -v setsid >/dev/null 2>&1; then setsid ${run} else ${run} fi`;
+  const child = spawn('bash', ['-c', launch], {
     cwd: repoRoot,
     detached: true,
     stdio: 'ignore',

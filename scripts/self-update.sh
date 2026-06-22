@@ -43,11 +43,23 @@ API_PORT="$(read_env API_PORT)"; : "${API_PORT:=4000}"
 HEALTH_URL="http://127.0.0.1:${API_PORT}/health"
 
 reload_pm2() {
-  if command -v pm2 >/dev/null 2>&1; then
-    { pm2 reload "$ROOT/ecosystem.config.cjs"; } >> "$LOG" 2>&1 || echo "pm2 reload warning" >> "$LOG"
-  else
+  if ! command -v pm2 >/dev/null 2>&1; then
     echo "pm2 not found on PATH — reload skipped; restart the processes manually." >> "$LOG"
+    return
   fi
+  # Reload ONLY our application processes, by name — never a project-local Postgres, which must
+  # not be restarted by an app update. `reload` is graceful; fall back to `restart` if it can't
+  # be reloaded. Each process is best-effort so one missing name doesn't abort the update.
+  local app
+  for app in opencoperlock-api opencoperlock-web; do
+    if pm2 describe "$app" >/dev/null 2>&1; then
+      echo "reloading $app" >> "$LOG"
+      { pm2 reload "$app" --update-env || pm2 restart "$app" --update-env; } >> "$LOG" 2>&1 \
+        || echo "warn: could not reload $app" >> "$LOG"
+    else
+      echo "note: pm2 process '$app' not found — skipped" >> "$LOG"
+    fi
+  done
 }
 
 # True once the API answers its /health endpoint. Tries curl, then wget, then a raw TCP probe.

@@ -834,17 +834,23 @@ export default function EspacesPage() {
     toast(t('drive.bulkDeleted', { n: items.length }), 'success');
   }
   async function bulkDownload() {
-    const items = entriesByKeys([...selected]);
-    for (const it of items) {
-      if (it.kind === 'file') {
-        const a = document.createElement('a');
-        a.href = api.url(`/files/${it.file.id}/download`);
-        a.download = it.file.name;
-        a.click();
-      } else if (it.kind === 'zk') {
-        const blob = await decryptZkBlob(it.zk);
-        if (blob) saveBlob(blob, zkName(it.zk));
-      }
+    const items = entriesByKeys([...selected]).filter((e) => e.kind !== 'folder');
+    if (items.length === 0) return;
+    // Several files at once → one .zip (browsers block a burst of separate downloads);
+    // a single file downloads directly.
+    if (items.length > 1) {
+      await zipSelection();
+      return;
+    }
+    const it = items[0]!;
+    if (it.kind === 'file') {
+      const a = document.createElement('a');
+      a.href = api.url(`/files/${it.file.id}/download`);
+      a.download = it.file.name;
+      a.click();
+    } else if (it.kind === 'zk') {
+      const blob = await decryptZkBlob(it.zk);
+      if (blob) saveBlob(blob, zkName(it.zk));
     }
   }
   async function bulkMove() {

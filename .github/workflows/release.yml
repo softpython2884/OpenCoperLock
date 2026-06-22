@@ -1,20 +1,46 @@
 name: Release
 
-# Cutting a release is a single action: push a SemVer tag (e.g. `v0.1.0`). This builds and
-# publishes the API and Web container images to the GitHub Container Registry (populating the
-# repo's Packages section), then creates the GitHub Release with auto-generated notes.
+# Two ways to cut a release:
+#   • push a SemVer tag (e.g. `v0.1.0`), or
+#   • run this workflow manually (Actions ▸ Release ▸ Run workflow) and pass the tag —
+#     the release job then creates that tag from the current branch for you.
+#
+# Either way it builds & pushes the API and Web container images to the GitHub Container
+# Registry (linked to this repo via OCI source labels, so they appear under Packages),
+# then publishes the GitHub Release with auto-generated notes.
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (SemVer, e.g. v0.1.0)
+        required: true
+        default: v0.1.0
 
 permissions:
-  contents: write # create the GitHub Release
+  contents: write # create the tag + GitHub Release
   packages: write # push images to ghcr.io
 
 jobs:
+  prep:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            v="${{ inputs.tag }}"
+          else
+            v="${{ github.ref_name }}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
   images:
     name: Publish ${{ matrix.name }} image
+    needs: prep
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -40,31 +66,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Derive image tags
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ matrix.image }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
-
       - name: Build & push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ${{ matrix.image }}:${{ needs.prep.outputs.version }}
+            ${{ matrix.image }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/softpython2884/OpenCoperLock
+            org.opencontainers.image.version=${{ needs.prep.outputs.version }}
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
           build-args: ${{ matrix.build_args }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   release:
     name: GitHub Release
-    needs: images
+    needs: [prep, images]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,18 +95,20 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.prep.outputs.version }}
+          name: OpenCoperLock ${{ needs.prep.outputs.version }}
           generate_release_notes: true
           body: |
-            ## OpenCoperLock ${{ github.ref_name }}
+            ## OpenCoperLock ${{ needs.prep.outputs.version }}
 
             Self-hostable private cloud — a classic Drive plus advanced acquisition & security tooling.
 
             ### Container images
-            Pull the published images from the GitHub Container Registry:
+            Published to the GitHub Container Registry:
 
             ```bash
-            docker pull ghcr.io/softpython2884/opencoperlock-api:${{ github.ref_name }}
-            docker pull ghcr.io/softpython2884/opencoperlock-web:${{ github.ref_name }}
+            docker pull ghcr.io/softpython2884/opencoperlock-api:${{ needs.prep.outputs.version }}
+            docker pull ghcr.io/softpython2884/opencoperlock-web:${{ needs.prep.outputs.version }}
             ```
 
             See `infra/docker-compose.yml` and `docs/DEPLOYMENT.md` to deploy.

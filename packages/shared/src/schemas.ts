@@ -131,6 +131,18 @@ export const createQuickCodeSchema = z.object({
 });
 export type CreateQuickCodeInput = z.infer<typeof createQuickCodeSchema>;
 
+/** Create a personal API token. `read` = list/download, `write` = upload/create folders. */
+export const apiScopes = ['read', 'write'] as const;
+export const createApiTokenSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+  scopes: z.array(z.enum(apiScopes)).min(1),
+  // Optional: confine the token to a single folder (and its subtree).
+  folderId: cuidSchema.nullable().optional(),
+  // Optional lifetime; omit for a non-expiring token.
+  expiresInDays: z.number().int().positive().max(3650).nullable().optional(),
+});
+export type CreateApiTokenInput = z.infer<typeof createApiTokenSchema>;
+
 /** Body sent by an anonymous guest when redeeming a Quick-Upload code. */
 export const quickUploadRedeemSchema = z.object({
   password: z.string().max(256).optional(),

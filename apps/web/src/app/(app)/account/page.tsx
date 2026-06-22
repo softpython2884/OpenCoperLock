@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { PublicQuickCode, PublicFolder } from '@opencoperlock/shared/client';
+import type { PublicQuickCode, PublicFolder, PublicApiToken } from '@opencoperlock/shared/client';
 import { api, API_URL, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useT } from '@/lib/i18n';
@@ -42,19 +42,29 @@ export default function AccountPage() {
   const [codes, setCodes] = useState<PublicQuickCode[]>([]);
   const [folders, setFolders] = useState<PublicFolder[]>([]);
   const [nc, setNc] = useState({ code: '', targetFolderId: '', usageLimit: '' });
+  const [tokens, setTokens] = useState<PublicApiToken[]>([]);
+  const [nt, setNt] = useState<{ name: string; scopes: ('read' | 'write')[]; folderId: string; expiresInDays: string }>({
+    name: '',
+    scopes: ['write'],
+    folderId: '',
+    expiresInDays: '',
+  });
+  const [newToken, setNewToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [s, sess, qc, fl] = await Promise.all([
+    const [s, sess, qc, fl, tk] = await Promise.all([
       api.get<TwoFaStatus>('/2fa/status'),
       api.get<{ sessions: SessionInfo[] }>('/auth/sessions'),
       api.get<{ codes: PublicQuickCode[] }>('/account/quick-codes'),
       api.get<{ folders: PublicFolder[] }>('/folders'),
+      api.get<{ tokens: PublicApiToken[] }>('/account/api-tokens'),
     ]);
     setStatus(s);
     setSessions(sess.sessions);
     setCodes(qc.codes);
     setFolders(fl.folders);
+    setTokens(tk.tokens);
   }, []);
 
   useEffect(() => {
@@ -309,6 +319,112 @@ export default function AccountPage() {
             </div>
           ))}
           {codes.length === 0 && <p className="py-2 text-sm text-neutral-400">{t('account.noQuickCodes')}</p>}
+        </div>
+      </section>
+
+      {/* API tokens */}
+      <section className="card space-y-3">
+        <h2 className="font-semibold">{t('account.apiTokens')}</h2>
+        <p className="text-sm text-neutral-500">{t('account.apiTokensHint')}</p>
+
+        {newToken && (
+          <div className="rounded border border-emerald-400/40 bg-emerald-500/5 p-3">
+            <p className="mb-2 text-sm font-medium text-emerald-300">{t('account.apiTokenOnce')}</p>
+            <div className="flex items-center gap-2">
+              <code className="min-w-0 flex-1 truncate rounded bg-black/30 px-2 py-1 font-mono text-xs text-zinc-100">{newToken}</code>
+              <button
+                className="btn-ghost px-2 py-1 text-xs"
+                onClick={async () => {
+                  await navigator.clipboard?.writeText(newToken).catch(() => {});
+                  toast(t('account.quickLinkCopied'), 'success');
+                }}
+              >
+                {t('account.quickCopyLink')}
+              </button>
+              <button className="btn-ghost px-2 py-1 text-xs" onClick={() => setNewToken(null)}>
+                {t('account.apiTokenDismiss')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-end gap-2">
+          <input
+            className="input max-w-[12rem]"
+            placeholder={t('account.apiTokenName')}
+            value={nt.name}
+            onChange={(e) => setNt({ ...nt, name: e.target.value })}
+          />
+          <select
+            className="input max-w-[11rem]"
+            value={nt.scopes.join(',')}
+            onChange={(e) => setNt({ ...nt, scopes: e.target.value.split(',') as ('read' | 'write')[] })}
+          >
+            <option value="write">{t('account.apiScopeWrite')}</option>
+            <option value="read">{t('account.apiScopeRead')}</option>
+            <option value="read,write">{t('account.apiScopeBoth')}</option>
+          </select>
+          <select
+            className="input max-w-[13rem]"
+            value={nt.folderId}
+            onChange={(e) => setNt({ ...nt, folderId: e.target.value })}
+          >
+            <option value="">{t('account.apiTokenAnyFolder')}</option>
+            {folders
+              .filter((f) => !f.isZeroKnowledge)
+              .map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+          </select>
+          <input
+            className="input max-w-[8rem]"
+            type="number"
+            min={1}
+            placeholder={t('account.apiTokenExpiry')}
+            value={nt.expiresInDays}
+            onChange={(e) => setNt({ ...nt, expiresInDays: e.target.value })}
+          />
+          <button
+            className="btn-primary"
+            disabled={!nt.name.trim()}
+            onClick={() =>
+              wrap(async () => {
+                const res = await api.post<{ token: string }>('/account/api-tokens', {
+                  name: nt.name.trim(),
+                  scopes: nt.scopes,
+                  folderId: nt.folderId || null,
+                  expiresInDays: Number(nt.expiresInDays) || null,
+                });
+                setNewToken(res.token);
+                setNt({ name: '', scopes: ['write'], folderId: '', expiresInDays: '' });
+                await load();
+              })
+            }
+          >
+            {t('account.apiTokenCreate')}
+          </button>
+        </div>
+
+        <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
+          {tokens.map((tk) => (
+            <div key={tk.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+              <div className="min-w-0">
+                <span className="font-medium text-zinc-200">{tk.name}</span>{' '}
+                <code className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs dark:bg-neutral-800">{tk.prefix}…</code>{' '}
+                <span className="text-xs text-neutral-400">
+                  {tk.scopes.join(', ')}
+                  {tk.expiresAt ? ` · ${t('account.apiTokenExpires', { date: new Date(tk.expiresAt).toLocaleDateString() })}` : ''}
+                  {tk.lastUsedAt ? ` · ${t('account.apiTokenLastUsed', { date: new Date(tk.lastUsedAt).toLocaleDateString() })}` : ` · ${t('account.apiTokenNeverUsed')}`}
+                </span>
+              </div>
+              <button className="btn-danger px-2 py-1" onClick={() => wrap(() => api.del(`/account/api-tokens/${tk.id}`).then(load))}>
+                {t('account.revoke')}
+              </button>
+            </div>
+          ))}
+          {tokens.length === 0 && <p className="py-2 text-sm text-neutral-400">{t('account.noApiTokens')}</p>}
         </div>
       </section>
 

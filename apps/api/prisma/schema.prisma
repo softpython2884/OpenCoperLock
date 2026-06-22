@@ -69,6 +69,7 @@ model User {
   auditLogs       AuditLog[]
   shares          ShareLink[]
   recoveryCodes   RecoveryCode[]
+  apiTokens       ApiToken[]
 
   @@index([email])
 }
@@ -273,6 +274,25 @@ model Setting {
   // Optional VirusTotal API key set from the admin panel; overrides VIRUSTOTAL_API_KEY in .env.
   virustotalApiKey     String?
   updatedAt            DateTime @updatedAt
+}
+
+// A personal access token for the public REST API (Authorization: Bearer ocl_…). Only a SHA-256
+// hash of the secret is stored; the plaintext is shown once at creation. `scopes` is a CSV of
+// "read"/"write"; `folderId` optionally restricts the token to one folder (and its subtree).
+model ApiToken {
+  id         String    @id @default(cuid())
+  ownerId    String
+  owner      User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name       String
+  tokenHash  String    @unique
+  prefix     String
+  scopes     String
+  folderId   String?
+  expiresAt  DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([ownerId])
 }
 
 // A shareable link to a SERVER-mode file or folder. ZK targets can't be shared (the

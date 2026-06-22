@@ -45,6 +45,18 @@ export interface PublicFile {
   createdAt: string;
 }
 
+export interface PublicApiToken {
+  id: string;
+  name: string;
+  /** Visible, non-secret prefix of the token (e.g. "ocl_Ab12Cd"). */
+  prefix: string;
+  scopes: string[];
+  folderId: string | null;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
 export interface PublicQuickCode {
   id: string;
   code: string;

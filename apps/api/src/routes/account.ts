@@ -3,15 +3,16 @@
  * permanently delete your account. Both are scoped strictly to the requesting user.
  */
 import type { FastifyPluginAsync } from 'fastify';
-import { passwordConfirmSchema, createQuickCodeSchema } from '@opencoperlock/shared';
+import { passwordConfirmSchema, createQuickCodeSchema, createApiTokenSchema } from '@opencoperlock/shared';
 import { prisma } from '../db.js';
 import { parseOr400 } from '../lib/validate.js';
 import { verifyPassword, hashPassword } from '../services/password.js';
 import { remainingRecoveryCodes } from '../services/recovery.js';
-import { toPublicFile, toPublicFolder, toPublicShare, toPublicUser, toPublicQuickCode } from '../lib/serialize.js';
+import { toPublicFile, toPublicFolder, toPublicShare, toPublicUser, toPublicQuickCode, toPublicApiToken } from '../lib/serialize.js';
 import { clearSessionCookie } from '../lib/cookies.js';
 import { audit } from '../services/audit.js';
 import { generateUniqueQuickCode, isCodeTakenError } from '../services/quickCode.js';
+import { generateToken } from '../services/apiToken.js';
 
 export const accountRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', app.requireAuth);
@@ -79,6 +80,51 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
     if (!existing) return reply.code(404).send({ error: 'Code not found' });
     await prisma.quickUploadCode.delete({ where: { id } });
     await audit(req, 'account.quickcode.delete', { target: id });
+    return { ok: true };
+  });
+
+  // ── Personal API tokens ──────────────────────────────────────────────────────
+  app.get('/api-tokens', async (req) => {
+    const tokens = await prisma.apiToken.findMany({
+      where: { ownerId: req.user!.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    return { tokens: tokens.map(toPublicApiToken) };
+  });
+
+  app.post('/api-tokens', async (req, reply) => {
+    const body = parseOr400(reply, createApiTokenSchema, req.body);
+    if (!body) return;
+
+    if (body.folderId) {
+      const folder = await prisma.folder.findFirst({ where: { id: body.folderId, ownerId: req.user!.id } });
+      if (!folder) return reply.code(404).send({ error: 'Folder not found' });
+      if (folder.isZeroKnowledge) return reply.code(400).send({ error: 'A vault cannot be an API target' });
+    }
+
+    const { token, hash, prefix } = generateToken();
+    const created = await prisma.apiToken.create({
+      data: {
+        ownerId: req.user!.id,
+        name: body.name,
+        tokenHash: hash,
+        prefix,
+        scopes: body.scopes.join(','),
+        folderId: body.folderId ?? null,
+        expiresAt: body.expiresInDays ? new Date(Date.now() + body.expiresInDays * 86_400_000) : null,
+      },
+    });
+    await audit(req, 'account.apitoken.create', { target: created.id });
+    // The plaintext token is returned ONCE here and never stored or shown again.
+    return reply.code(201).send({ token, apiToken: toPublicApiToken(created) });
+  });
+
+  app.delete('/api-tokens/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const existing = await prisma.apiToken.findFirst({ where: { id, ownerId: req.user!.id } });
+    if (!existing) return reply.code(404).send({ error: 'Token not found' });
+    await prisma.apiToken.delete({ where: { id } });
+    await audit(req, 'account.apitoken.delete', { target: id });
     return { ok: true };
   });
 

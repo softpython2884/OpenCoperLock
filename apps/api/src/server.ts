@@ -20,6 +20,7 @@ import { sharePublicRoutes } from './routes/share-public.js';
 import { twoFactorRoutes } from './routes/twofa.js';
 import { accountRoutes } from './routes/account.js';
 import { adminRoutes } from './routes/admin.js';
+import { apiV1Routes } from './routes/api-v1.js';
 
 export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({
@@ -82,6 +83,7 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(twoFactorRoutes, { prefix: '/2fa' });
   await app.register(accountRoutes, { prefix: '/account' });
   await app.register(adminRoutes, { prefix: '/admin' });
+  await app.register(apiV1Routes, { prefix: '/api/v1' });
 
   app.setErrorHandler((err: { statusCode?: number; message?: string }, req, reply) => {
     req.log.error({ err }, 'request failed');

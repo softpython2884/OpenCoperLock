@@ -10,12 +10,14 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import { CSRF_HEADER, SESSION_COOKIE, safeEqual } from '@opencoperlock/shared';
 import { getSession, touchSession } from '../services/session.js';
+import { authenticateToken, type ApiScope } from '../services/apiToken.js';
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 const authPlugin: FastifyPluginAsync = async (app) => {
   app.decorateRequest('user', null);
   app.decorateRequest('sessionData', null);
+  app.decorateRequest('apiToken', null);
 
   // Resolve the session for every request (non-blocking; routes decide if it's required).
   app.addHook('onRequest', async (req) => {
@@ -52,6 +54,14 @@ const authPlugin: FastifyPluginAsync = async (app) => {
     if (req.user.disabled) return reply.code(403).send({ error: 'Account disabled' });
     if (req.user.role !== 'ADMIN') return reply.code(403).send({ error: 'Admin access required' });
     if (!enforceCsrf(req, reply)) return reply;
+  });
+
+  // Bearer-token auth for the public REST API. No cookie is involved, so CSRF does not apply.
+  app.decorate('tokenAuth', (scope: ApiScope) => async (req: FastifyRequest, reply: FastifyReply) => {
+    const result = await authenticateToken(req.headers.authorization, scope);
+    if (!result.ok) return reply.code(result.status).send({ error: result.error });
+    req.user = result.owner;
+    req.apiToken = result.token;
   });
 };
 

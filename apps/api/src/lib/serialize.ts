@@ -4,6 +4,7 @@
  * response by accident — only the fields listed here are ever serialised.
  */
 import type {
+  ApiToken,
   FileObject,
   Folder,
   QuickUploadCode,
@@ -12,6 +13,7 @@ import type {
   User,
 } from '@prisma/client';
 import type {
+  PublicApiToken,
   PublicFile,
   PublicFolder,
   PublicQuickCode,
@@ -19,6 +21,19 @@ import type {
   PublicShare,
   PublicUser,
 } from '@opencoperlock/shared';
+
+export function toPublicApiToken(t: ApiToken): PublicApiToken {
+  return {
+    id: t.id,
+    name: t.name,
+    prefix: t.prefix,
+    scopes: t.scopes ? t.scopes.split(',').filter(Boolean) : [],
+    folderId: t.folderId,
+    expiresAt: t.expiresAt ? t.expiresAt.toISOString() : null,
+    lastUsedAt: t.lastUsedAt ? t.lastUsedAt.toISOString() : null,
+    createdAt: t.createdAt.toISOString(),
+  };
+}
 
 export function toPublicUser(u: User): PublicUser {
   return {

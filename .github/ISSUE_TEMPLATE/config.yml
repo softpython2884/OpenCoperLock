@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/softpython2884/OpenCoperLock/security/advisories/new
+    about: Please report security issues privately — see SECURITY.md. Do not open a public issue.
+  - name: 💬 Questions & ideas
+    url: https://github.com/softpython2884/OpenCoperLock/discussions
+    about: Ask questions or discuss ideas in Discussions (enable it in repo settings if needed).

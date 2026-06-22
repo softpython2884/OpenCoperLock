@@ -26,6 +26,9 @@ RUN pnpm install --frozen-lockfile --filter @opencoperlock/shared --filter @open
 
 COPY packages/shared packages/shared
 COPY apps/web apps/web
+# apps/web runs a postbuild (scripts/assemble-standalone.mjs) to lay out the Next
+# standalone bundle, so the scripts/ dir must be present in the build context.
+COPY scripts scripts
 RUN pnpm --filter @opencoperlock/shared build && pnpm --filter @opencoperlock/web build
 
 # ── Runtime ──────────────────────────────────────────────────────────────────

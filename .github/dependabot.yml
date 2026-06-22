@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # JS/TS dependencies across the pnpm workspace.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Keep noise low: batch routine minor/patch bumps into a single PR.
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  # Keep the GitHub Actions in the workflows up to date.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

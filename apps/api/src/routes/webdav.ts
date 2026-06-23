@@ -279,7 +279,6 @@ export const webdavRoutes: FastifyPluginAsync = async (app) => {
   const methods = [
     'OPTIONS',
     'GET',
-    'HEAD',
     'PUT',
     'DELETE',
     'PROPFIND',
@@ -291,6 +290,9 @@ export const webdavRoutes: FastifyPluginAsync = async (app) => {
     'UNLOCK',
   ];
   for (const method of methods) {
+    // HEAD is intentionally omitted: Fastify auto-creates a HEAD route from each GET route and
+    // reuses this handler (which special-cases method === 'HEAD'). Registering HEAD explicitly
+    // would collide with that auto route (FST_ERR_DUPLICATED_ROUTE on boot).
     app.route({ method: method as never, url: '/', handler: handle });
     app.route({ method: method as never, url: '/*', handler: handle });
   }

@@ -6,7 +6,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { PublicUser } from '@opencoperlock/shared/client';
-import { login as apiLogin, logout as apiLogout, me } from './api';
+import { login as apiLogin, logout as apiLogout, me, ApiError } from './api';
 
 interface AuthState {
   user: PublicUser | null;
@@ -24,17 +24,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await me();
+      // Bound the check so a stuck/slow network can never leave the app on "loading" forever.
+      const res = await Promise.race([
+        me(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new TypeError('auth timeout')), 8000)),
+      ]);
       setUser(res.user);
       try {
         localStorage.setItem('ocl_user', JSON.stringify(res.user));
       } catch {
         /* storage unavailable */
       }
-    } catch {
-      // Offline: keep the last-known user so the app still loads (read-only / queue uploads).
+    } catch (err) {
+      // A real HTTP response (e.g. 401) means we're logged out → no user. A network failure or
+      // timeout means we're probably offline → keep the last-known user so the app still loads.
       let cached: PublicUser | null = null;
-      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      if (!(err instanceof ApiError)) {
         try {
           const raw = localStorage.getItem('ocl_user');
           if (raw) cached = JSON.parse(raw) as PublicUser;

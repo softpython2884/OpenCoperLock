@@ -7,7 +7,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { FAST_UPLOAD_FOLDER_NAME } from '@opencoperlock/shared/client';
-import { api } from './api';
+import { api, API_URL } from './api';
 import { useAuth } from './auth';
 import { useT } from './i18n';
 import { toast } from '@/components/ui/overlays';
@@ -83,23 +83,43 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refresh, reloadItems, t]);
 
+  // Real connectivity = can we actually reach the API, not just what navigator.onLine claims
+  // (a misconfigured NIC or captive portal can lie). We probe /health with a short timeout and
+  // use that as the source of truth; navigator events and a timer just trigger a re-probe.
+  const onlineRef = useRef(true);
+  const probe = useCallback(async (): Promise<boolean> => {
+    try {
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), 5000);
+      const res = await fetch(`${API_URL}/health`, { method: 'GET', cache: 'no-store', credentials: 'omit', signal: ctrl.signal });
+      clearTimeout(to);
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const recheck = useCallback(async () => {
+    const ok = await probe();
+    const was = onlineRef.current;
+    onlineRef.current = ok;
+    setOnline(ok);
+    if (ok && !was) void flush(); // transitioned offline → online
+  }, [probe, flush]);
+
   useEffect(() => {
-    setOnline(navigator.onLine);
     void reloadItems();
-    const goOnline = () => {
-      setOnline(true);
-      void flush();
-    };
-    const goOffline = () => setOnline(false);
-    window.addEventListener('online', goOnline);
-    window.addEventListener('offline', goOffline);
-    // Catch a connection that came back before this mounted.
-    if (navigator.onLine) void flush();
+    void recheck();
+    const onEvt = () => void recheck();
+    window.addEventListener('online', onEvt);
+    window.addEventListener('offline', onEvt);
+    const iv = setInterval(() => void recheck(), 25000);
     return () => {
-      window.removeEventListener('online', goOnline);
-      window.removeEventListener('offline', goOffline);
+      window.removeEventListener('online', onEvt);
+      window.removeEventListener('offline', onEvt);
+      clearInterval(iv);
     };
-  }, [flush, reloadItems]);
+  }, [recheck, reloadItems]);
 
   const enqueueFiles = useCallback(
     async (files: FileList | File[], folderId: string, folderName: string) => {
@@ -107,8 +127,8 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
         await enqueue({ blob: file, name: file.name, type: file.type, folderId, folderName, createdAt: Date.now() });
       }
       await reloadItems();
-      // If we're actually online (e.g. flaky), try to flush right away.
-      if (navigator.onLine) void flush();
+      // If we're actually reachable, try to flush right away.
+      if (onlineRef.current) void flush();
     },
     [reloadItems, flush],
   );

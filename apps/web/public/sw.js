@@ -50,21 +50,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Page navigations: network-first, falling back to the cached page or the app shell.
+  // Page navigations: network-first with a short timeout (so a slow mobile network falls back to
+  // the cached page instead of hanging), then the cached page or the app shell.
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req)
-        .then((res) => {
+      Promise.race([
+        fetch(req).then((res) => {
           const copy = res.clone();
           caches.open(SHELL).then((c) => c.put(req, copy)).catch(() => {});
           return res;
-        })
-        .catch(() =>
-          caches
-            .match(req)
-            .then((r) => r || caches.match('/'))
-            .then((r) => r || Response.error()),
-        ),
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000)),
+      ]).catch(() =>
+        caches
+          .match(req)
+          .then((r) => r || caches.match('/'))
+          .then((r) => r || fetch(req))
+          .catch(() => Response.error()),
+      ),
     );
   }
 });

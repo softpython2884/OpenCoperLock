@@ -861,8 +861,10 @@ runIf('API integration', () => {
       await prisma.user.update({ where: { id: user.id }, data: { lastSeenVersion: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef' } });
       const shown = await app.inject({ method: 'GET', url: '/version/whats-new', headers: { cookie: auth.cookie } });
       expect(shown.json().show).toBe(true);
-      expect(typeof shown.json().notes).toBe('string');
-      expect(shown.json().notes.length).toBeGreaterThan(0);
+      expect(Array.isArray(shown.json().entries)).toBe(true);
+      expect(shown.json().entries.length).toBeGreaterThan(0);
+      // Entries are structured (a title at minimum), not a raw markdown blob.
+      expect(typeof shown.json().entries[0].title).toBe('string');
 
       // Dismissing records the current build, so it never shows again for this version.
       const seen = await app.inject({ method: 'POST', url: '/version/whats-new/seen', headers: authHeaders(auth) });

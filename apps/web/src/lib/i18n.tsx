@@ -546,9 +546,12 @@ const fr: Dict = {
   'role.admin': 'Administrateur',
   'role.user': 'Utilisateur',
   // what's new
+  'whatsnew.label': 'Nouveautés',
   'whatsnew.title': 'Quoi de neuf',
   'whatsnew.version': 'Version {version}',
   'whatsnew.changes': '{count} changement(s)',
+  'whatsnew.details': 'Détails',
+  'whatsnew.more': '+{count} autres changements',
   'whatsnew.gotIt': 'J’ai compris',
   'whatsnew.dismiss': 'Fermer',
   // shared spaces
@@ -1141,9 +1144,12 @@ const en: Dict = {
   'role.admin': 'Administrator',
   'role.user': 'User',
   // what's new
+  'whatsnew.label': 'Update',
   'whatsnew.title': 'What’s new',
   'whatsnew.version': 'Version {version}',
   'whatsnew.changes': '{count} change(s)',
+  'whatsnew.details': 'Details',
+  'whatsnew.more': '+{count} more changes',
   'whatsnew.gotIt': 'Got it',
   'whatsnew.dismiss': 'Close',
   // shared spaces

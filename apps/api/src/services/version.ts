@@ -97,20 +97,36 @@ function cleanBody(body: string): string {
     .trim();
 }
 
+/** One commit, parsed for the "What's new" UI. `type` is the conventional-commit type
+ *  (feat/fix/docs/…), or null for a free-form subject; `title` is the description with the
+ *  `type(scope):` prefix stripped and capitalised; `body` is the cleaned, long-form detail. */
+export interface ChangelogEntry {
+  type: string | null;
+  title: string;
+  body: string;
+}
+
 export interface Changelog {
-  /** Markdown ready to render in the "What's new" dialog. */
-  markdown: string;
-  /** Number of commits summarised (after capping). */
+  entries: ChangelogEntry[];
+  /** Total commits in the range (may exceed entries.length, which is capped). */
   count: number;
 }
 
-// Beyond this many commits the notes get unwieldy; we summarise the newest and note the rest.
+// Beyond this many commits the dialog gets unwieldy; we list the newest and report the rest.
 const MAX_CHANGELOG_COMMITS = 40;
 
+/** Split a commit subject into its conventional-commit type and a clean, capitalised title. */
+function parseSubject(subject: string): { type: string | null; title: string } {
+  const m = subject.match(/^([a-zA-Z]+)(?:\([^)]*\))?(?:!)?:\s*(.+)$/);
+  const raw = m ? m[2]!.trim() : subject.trim();
+  const title = raw.charAt(0).toUpperCase() + raw.slice(1);
+  return { type: m ? m[1]!.toLowerCase() : null, title };
+}
+
 /**
- * Build human-readable release notes for the commits in `from..to` (newest first), as Markdown.
- * Returns null when there is nothing to show or git can't produce a range (e.g. a force-push made
- * `from` unreachable — the caller falls back to the most recent commits instead).
+ * Build structured release notes for the commits in `from..to` (newest first). Returns null when
+ * there is nothing to show or git can't produce a range (e.g. a force-push made `from` unreachable
+ * — the caller falls back to the most recent commits instead).
  */
 export async function getChangelog(from: string, to: string): Promise<Changelog | null> {
   if (!repoRoot || from === to) return null;
@@ -126,7 +142,7 @@ export async function getChangelog(from: string, to: string): Promise<Changelog 
   return renderChangelog(stdout);
 }
 
-/** The most recent `n` commits as Markdown — a fallback when the range can't be computed. */
+/** The most recent `n` commits — a fallback when the range can't be computed. */
 export async function getRecentChangelog(n: number): Promise<Changelog | null> {
   if (!repoRoot) return null;
   try {
@@ -149,12 +165,11 @@ function renderChangelog(raw: string): Changelog | null {
     .filter((c) => c.subject);
   if (commits.length === 0) return null;
 
-  const shown = commits.slice(0, MAX_CHANGELOG_COMMITS);
-  const blocks = shown.map((c) => (c.body ? `### ${c.subject}\n\n${c.body}` : `### ${c.subject}`));
-  if (commits.length > shown.length) {
-    blocks.push(`_…and ${commits.length - shown.length} more change(s)._`);
-  }
-  return { markdown: blocks.join('\n\n'), count: commits.length };
+  const entries: ChangelogEntry[] = commits.slice(0, MAX_CHANGELOG_COMMITS).map((c) => {
+    const { type, title } = parseSubject(c.subject);
+    return { type, title, body: c.body };
+  });
+  return { entries, count: commits.length };
 }
 
 export interface HistoryCommit {

@@ -45,7 +45,7 @@ export const versionRoutes: FastifyPluginAsync = async (app) => {
       await prisma.user.update({ where: { id: req.user!.id }, data: { lastSeenVersion: local.sha } });
       return { show: false };
     }
-    return { show: true, version: local.shortSha, notes: log.markdown, count: log.count };
+    return { show: true, version: local.shortSha, entries: log.entries, count: log.count };
   });
 
   // POST /version/whats-new/seen — dismiss the dialog for the current build.

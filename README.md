@@ -9,6 +9,15 @@ client-side zero-knowledge vault.
 Licensed under the GNU AGPLv3. If you host a modified version, your users are entitled to
 the source.
 
+## 📚 Documentation
+
+- **In-app guide** — once running, open **Documentation** in the app sidebar (`/docs`):
+  spaces & vaults, Quick-Upload, API tokens, webhooks, WebDAV and keyboard shortcuts.
+- **[REST API & integrations](docs/API.md)** — personal API tokens, the `/api/v1` endpoints,
+  outgoing webhooks, and mounting the Drive over **WebDAV** (with `curl`/`rclone` examples).
+- **[Deployment](docs/DEPLOYMENT.md)** — bare-metal (PM2) and Docker, behind nginx.
+- **[Contributing](CONTRIBUTING.md)** · **[Security policy](SECURITY.md)**
+
 ## What it does
 
 - **Drive** — browse, upload (streaming), download and delete files and folders, with a

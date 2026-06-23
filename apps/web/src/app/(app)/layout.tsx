@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { FolderLock, Share2, Globe, Settings, ShieldCheck, LogOut, Menu, X, Trash2 } from 'lucide-react';
+import { FolderLock, Share2, Globe, Settings, ShieldCheck, LogOut, Menu, X, Trash2, BookOpen } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useT } from '@/lib/i18n';
 import { Wordmark } from '@/components/Wordmark';
@@ -16,6 +16,7 @@ const NAV = [
   { href: '/shares', labelKey: 'nav.shares', icon: Share2 },
   { href: '/remote', labelKey: 'nav.remote', icon: Globe },
   { href: '/trash', labelKey: 'nav.trash', icon: Trash2 },
+  { href: '/docs', labelKey: 'nav.docs', icon: BookOpen },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

@@ -27,11 +27,12 @@ export function escapeXml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]!);
 }
 
-/** Absolute href for a path, with a trailing slash for collections. */
-export function hrefFor(segments: string[], isCollection: boolean): string {
+/** Absolute href for a path, with a trailing slash for collections. `base` is the public path to
+ *  the WebDAV root (e.g. "/dav", or "/api/dav" behind a proxy), so links work through nginx. */
+export function hrefFor(base: string, segments: string[], isCollection: boolean): string {
   const encoded = segments.map((s) => encodeURIComponent(s)).join('/');
-  const base = encoded ? `${PREFIX}/${encoded}` : `${PREFIX}`;
-  return isCollection ? `${base}/` : base;
+  const full = encoded ? `${base}/${encoded}` : base;
+  return isCollection ? `${full}/` : full;
 }
 
 /** Split a WebDAV request path (the part after /dav) into decoded, non-empty segments. */
@@ -46,6 +47,13 @@ export function pathSegments(star: string | undefined): string[] {
         return s;
       }
     });
+}
+
+/** Public path to the WebDAV root, honouring a reverse-proxy prefix (X-Forwarded-Prefix) so the
+ *  hrefs we emit match the URL the client actually used (e.g. /api/dav behind nginx). */
+function davBase(req: FastifyRequest): string {
+  const fwd = String(req.headers['x-forwarded-prefix'] ?? '').trim().replace(/\/+$/, '');
+  return `${fwd}${PREFIX}`;
 }
 
 type Resolved =
@@ -76,12 +84,12 @@ async function resolvePath(ownerId: string, segments: string[]): Promise<Resolve
   return { type: 'missing', parentId, name: last };
 }
 
-function propXml(segments: string[], isCollection: boolean, name: string, size: number, mtime: Date, mime: string): string {
+function propXml(base: string, segments: string[], isCollection: boolean, name: string, size: number, mtime: Date, mime: string): string {
   const props = isCollection
     ? `<D:resourcetype><D:collection/></D:resourcetype>`
     : `<D:resourcetype/><D:getcontentlength>${size}</D:getcontentlength><D:getcontenttype>${escapeXml(mime)}</D:getcontenttype>`;
   return (
-    `<D:response><D:href>${escapeXml(hrefFor(segments, isCollection))}</D:href>` +
+    `<D:response><D:href>${escapeXml(hrefFor(base, segments, isCollection))}</D:href>` +
     `<D:propstat><D:prop>` +
     `<D:displayname>${escapeXml(name)}</D:displayname>` +
     `<D:getlastmodified>${mtime.toUTCString()}</D:getlastmodified>` +
@@ -153,16 +161,18 @@ export const webdavRoutes: FastifyPluginAsync = async (app) => {
 
     const node = await resolvePath(ownerId, segments);
 
+    const base = davBase(req);
+
     if (method === 'PROPFIND') {
       if (node.type === 'invalid' || node.type === 'missing') return reply.code(404).send();
       const depth = String(req.headers.depth ?? '1');
       const parts: string[] = [];
       if (node.type === 'root') {
-        parts.push(propXml([], true, 'OpenCoperLock', 0, new Date(), ''));
+        parts.push(propXml(base, [], true, 'OpenCoperLock', 0, new Date(), ''));
       } else if (node.type === 'folder') {
-        parts.push(propXml(segments, true, node.folder.name, 0, node.folder.createdAt, ''));
+        parts.push(propXml(base, segments, true, node.folder.name, 0, node.folder.createdAt, ''));
       } else {
-        parts.push(propXml(segments, false, node.file.name, Number(node.file.sizeBytes), node.file.createdAt, node.file.mimeType));
+        parts.push(propXml(base, segments, false, node.file.name, Number(node.file.sizeBytes), node.file.createdAt, node.file.mimeType));
       }
       if (depth !== '0' && node.type !== 'file') {
         const parentId = node.type === 'root' ? null : node.folder.id;
@@ -173,8 +183,8 @@ export const webdavRoutes: FastifyPluginAsync = async (app) => {
             orderBy: { name: 'asc' },
           }),
         ]);
-        for (const f of folders) parts.push(propXml([...segments, f.name], true, f.name, 0, f.createdAt, ''));
-        for (const f of files) parts.push(propXml([...segments, f.name], false, f.name, Number(f.sizeBytes), f.createdAt, f.mimeType));
+        for (const f of folders) parts.push(propXml(base, [...segments, f.name], true, f.name, 0, f.createdAt, ''));
+        for (const f of files) parts.push(propXml(base, [...segments, f.name], false, f.name, Number(f.sizeBytes), f.createdAt, f.mimeType));
       }
       return reply
         .header('Content-Type', 'application/xml; charset=utf-8')
@@ -267,7 +277,7 @@ export const webdavRoutes: FastifyPluginAsync = async (app) => {
         .code(207)
         .send(
           `<?xml version="1.0" encoding="utf-8"?>\n<D:multistatus xmlns:D="DAV:"><D:response>` +
-            `<D:href>${escapeXml(hrefFor(segments, node.type === 'folder' || node.type === 'root'))}</D:href>` +
+            `<D:href>${escapeXml(hrefFor(base, segments, node.type === 'folder' || node.type === 'root'))}</D:href>` +
             `<D:propstat><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>`,
         );
     }

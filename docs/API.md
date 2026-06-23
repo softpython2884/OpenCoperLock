@@ -102,6 +102,7 @@ location /api/ {
     proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header Authorization     $http_authorization;  # forward Basic creds
+    proxy_set_header X-Forwarded-Prefix /api;  # so WebDAV hrefs keep the /api prefix
     proxy_pass_request_headers on;
     client_max_body_size 0;        # no upload size cap at the proxy
     proxy_request_buffering off;   # stream PUT bodies straight through
@@ -112,6 +113,10 @@ location /api/ {
 
 The WebDAV URL is then `https://<host>/api/dav/` (exactly what the account page shows — copy it
 from there rather than typing it).
+
+> The `X-Forwarded-Prefix` header is important: without it the server emits `/dav/…` hrefs, and
+> clients that strip `/api` can list the root but fail to open folders. With it, hrefs become
+> `/api/dav/…` and navigation works.
 
 ### Diagnosing a mount that won't connect
 

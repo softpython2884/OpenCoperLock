@@ -9,10 +9,15 @@ describe('webdav helpers', () => {
   });
 
   it('builds hrefs with a trailing slash for collections and encoding', () => {
-    expect(hrefFor([], true)).toBe('/dav/');
-    expect(hrefFor(['Photos'], true)).toBe('/dav/Photos/');
-    expect(hrefFor(['a', 'b.txt'], false)).toBe('/dav/a/b.txt');
-    expect(hrefFor(['my folder'], true)).toBe('/dav/my%20folder/');
+    expect(hrefFor('/dav', [], true)).toBe('/dav/');
+    expect(hrefFor('/dav', ['Photos'], true)).toBe('/dav/Photos/');
+    expect(hrefFor('/dav', ['a', 'b.txt'], false)).toBe('/dav/a/b.txt');
+    expect(hrefFor('/dav', ['my folder'], true)).toBe('/dav/my%20folder/');
+  });
+
+  it('honours a reverse-proxy prefix so links work through nginx', () => {
+    expect(hrefFor('/api/dav', ['Photos'], true)).toBe('/api/dav/Photos/');
+    expect(hrefFor('/api/dav', [], true)).toBe('/api/dav/');
   });
 
   it('splits and decodes path segments', () => {

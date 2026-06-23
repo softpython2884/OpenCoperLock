@@ -9,6 +9,7 @@ import Link from 'next/link';
 import {
   BookOpen,
   FolderLock,
+  Users,
   Files,
   MousePointerClick,
   Keyboard,
@@ -220,6 +221,48 @@ export default function DocsPage() {
       ],
     },
     {
+      id: 'shared-spaces',
+      icon: Users,
+      title: L('Espaces partagés', 'Shared Spaces'),
+      blocks: [
+        {
+          p: L(
+            'Un Espace Partagé est un espace collaboratif appartenant à un seul utilisateur (le propriétaire) et ouvert à un groupe de membres. Contrairement au partage par lien, plusieurs personnes y travaillent ensemble. Les fichiers sont chiffrés côté serveur (jamais Zero-Knowledge — un coffre aveugle ne peut pas être partagé).',
+            'A Shared Space is a collaborative area owned by a single user (the owner) and opened to a group of members. Unlike link sharing, several people work in it together. Files are server-side encrypted (never Zero-Knowledge — a blind vault can’t be shared).',
+          ),
+        },
+        { h: L('Rôles', 'Roles') },
+        {
+          ul: [
+            L('Propriétaire : contrôle total ; c’est sur son quota qu’est facturé le stockage de l’espace.', 'Owner: full control; the space’s storage is billed to their quota.'),
+            L('Éditeur : peut envoyer, ouvrir, éditer, renommer et supprimer.', 'Editor: can upload, open, edit, rename and delete.'),
+            L('Lecteur : peut consulter, ouvrir et télécharger uniquement.', 'Viewer: can browse, open and download only.'),
+          ],
+        },
+        { h: L('Membres', 'Members') },
+        {
+          ul: [
+            L('Le propriétaire ajoute des membres par e-mail (comptes existants de l’instance) et choisit leur rôle.', 'The owner adds members by email (existing accounts on the instance) and picks their role.'),
+            L('Un membre peut quitter l’espace ; le propriétaire peut retirer un membre ou changer son rôle.', 'A member can leave; the owner can remove a member or change their role.'),
+          ],
+        },
+        { h: L('Fichiers', 'Files') },
+        {
+          ul: [
+            L('Importer, créer des dossiers, ouvrir/prévisualiser et éditer les fichiers texte (l’enregistrement crée une version).', 'Upload, create folders, open/preview and edit text files (saving creates a version).'),
+            L('Tous les fichiers de l’espace comptent sur le quota du propriétaire, peu importe qui les envoie.', 'Every file in the space counts against the owner’s quota, no matter who uploads it.'),
+          ],
+        },
+        { h: L('Cycle de vie', 'Lifecycle') },
+        {
+          ul: [
+            L('À la suppression, le propriétaire choisit : tout supprimer (libère son quota), ou transférer l’espace — et son coût de stockage — au membre le plus ancien.', 'On deletion, the owner chooses: delete everything (frees their quota), or transfer the space — and its storage cost — to the longest-standing member.'),
+          ],
+        },
+        { note: L('Les Espaces Partagés sont isolés : leur contenu n’apparaît jamais dans votre Drive personnel, la recherche, l’API, WebDAV ou l’export.', 'Shared Spaces are isolated: their content never appears in your personal Drive, search, the API, WebDAV or your export.') },
+      ],
+    },
+    {
       id: 'quick',
       icon: Zap,
       title: L('Quick-Upload', 'Quick-Upload'),
@@ -369,7 +412,15 @@ curl -H "Authorization: Bearer ocl_…" -F "file=@backup.tgz" \\
             L('Plafond de stockage global de l’instance.', 'Instance-wide storage cap.'),
             L('Clé VirusTotal configurable depuis le panneau (prime sur le .env, appliquée à chaud).', 'VirusTotal key configurable from the panel (overrides .env, applied live).'),
             L('Vue globale des codes Quick-Upload et journal d’audit.', 'Global view of Quick-Upload codes and the audit log.'),
-            L('Mise à jour en un clic (git + build + redémarrage, avec health-check et rollback).', 'One-click update (git + build + restart, with health-check and rollback).'),
+          ],
+        },
+        { h: L('Mises à jour', 'Updates') },
+        {
+          ul: [
+            L('Mise à jour en un clic (git + build + redémarrage, avec health-check et restauration automatique en cas d’échec).', 'One-click update (git + build + restart, with health-check and automatic rollback on failure).'),
+            L('Mises à jour automatiques (option) : l’instance vérifie GitHub plusieurs fois par jour et applique une nouvelle version toute seule.', 'Automatic updates (optional): the instance checks GitHub a few times a day and applies a newer build on its own.'),
+            L('Revenir en arrière : choisir une version précédente dans l’historique pour y restaurer le déploiement.', 'Roll back: pick an earlier version from the history to restore the deployment to it.'),
+            L('Après une mise à jour, chaque utilisateur voit une fois un « Quoi de neuf » avec les nouveautés.', 'After an update, each user sees a one-time “What’s new” with the changes.'),
           ],
         },
       ],

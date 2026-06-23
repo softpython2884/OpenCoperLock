@@ -872,6 +872,32 @@ runIf('API integration', () => {
     });
   });
 
+  describe('admin version history & rollback', () => {
+    it('lists history and validates rollback targets', async () => {
+      await createUser({ email: 'rb@test.local', password: 'correct-horse-battery', role: 'ADMIN' });
+      const auth = await login(app, 'rb@test.local', 'correct-horse-battery');
+
+      const hist = await app.inject({ method: 'GET', url: '/admin/version/history', headers: { cookie: auth.cookie } });
+      expect(hist.statusCode).toBe(200);
+      expect(Array.isArray(hist.json().history)).toBe(true);
+      const currentSha = hist.json().currentSha as string | null;
+
+      // A malformed SHA is rejected up front.
+      const bad = await app.inject({ method: 'POST', url: '/admin/rollback', headers: authHeaders(auth), payload: { sha: 'not-a-sha' } });
+      expect(bad.statusCode).toBe(400);
+
+      // A well-formed but unknown SHA isn't an ancestor of HEAD → refused (never goes forward/sideways).
+      const unknown = await app.inject({ method: 'POST', url: '/admin/rollback', headers: authHeaders(auth), payload: { sha: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef' } });
+      expect(unknown.statusCode).toBe(400);
+
+      // Rolling back to the version already running is a no-op error.
+      if (currentSha) {
+        const same = await app.inject({ method: 'POST', url: '/admin/rollback', headers: authHeaders(auth), payload: { sha: currentSha } });
+        expect(same.statusCode).toBe(400);
+      }
+    });
+  });
+
   describe('admin maintenance', () => {
     it('reconciles a drifted usedBytes counter', async () => {
       const admin = await createUser({

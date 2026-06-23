@@ -40,6 +40,7 @@ import { api, API_URL, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useT } from '@/lib/i18n';
 import { Select } from '@/components/ui/Select';
+import { FileViewer, type ViewerSource } from '@/components/FileViewer';
 import { confirm, choose, prompt, toast } from '@/components/ui/overlays';
 
 export default function SpacePage() {
@@ -57,6 +58,7 @@ export default function SpacePage() {
   const [loading, setLoading] = useState(true);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [showManage, setShowManage] = useState(false);
+  const [viewing, setViewing] = useState<ViewerSource | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const canWrite = space ? space.myRole === 'OWNER' || space.myRole === 'EDITOR' : false;
@@ -142,6 +144,28 @@ export default function SpacePage() {
 
   function download(f: PublicFile) {
     window.open(`${API_URL}/spaces/${spaceId}/files/${f.id}/download`, '_blank');
+  }
+
+  // Open a file in the in-app viewer. Editors additionally get an editable text surface that
+  // re-uploads under the same name (the upload pipeline versions it in place).
+  function openFile(f: PublicFile) {
+    setViewing({
+      name: f.name,
+      mime: f.mimeType,
+      sizeBytes: f.sizeBytes,
+      url: api.url(`/spaces/${spaceId}/files/${f.id}/download`),
+      ...(canWrite
+        ? {
+            onSave: async (text: string) => {
+              const form = new FormData();
+              form.append('file', new File([text], f.name, { type: f.mimeType || 'text/plain' }));
+              const q = f.folderId ? `?folderId=${encodeURIComponent(f.folderId)}` : '';
+              await api.upload(`/spaces/${spaceId}/files${q}`, form);
+              await Promise.all([loadFiles(), loadSpace()]);
+            },
+          }
+        : {}),
+    });
   }
 
   async function renameFile(f: PublicFile) {
@@ -425,13 +449,13 @@ export default function SpacePage() {
           ))}
           {files.map((f) => (
             <div key={f.id} className="row">
-              <div className="flex min-w-0 items-center gap-3">
+              <button className="flex min-w-0 items-center gap-3 text-left" onClick={() => openFile(f)} title={t('space.openFile')}>
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-violet-300"><FileIcon size={16} /></span>
                 <div className="min-w-0">
                   <p className="truncate font-medium text-zinc-100">{f.name}</p>
                   <p className="text-xs text-zinc-500">{formatBytes(f.sizeBytes)}</p>
                 </div>
-              </div>
+              </button>
               <div className="flex shrink-0 items-center gap-1">
                 <button className="rounded-lg p-1.5 text-zinc-400 transition hover:bg-white/5 hover:text-zinc-100" title={t('space.download')} onClick={() => download(f)}><Download size={15} /></button>
                 {canWrite && (
@@ -445,6 +469,8 @@ export default function SpacePage() {
           ))}
         </div>
       )}
+
+      {viewing && <FileViewer source={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }

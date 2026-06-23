@@ -19,6 +19,9 @@ ROOT="$(pwd)"
 STATUS="$ROOT/.update-status.json"
 LOG="$ROOT/.update.log"
 BRANCH="${UPDATE_BRANCH:-main}"
+# When set, reset to this exact commit (a rollback to a previous version) instead of the latest on
+# the branch. The build / health-check / auto-rollback safety net below is identical either way.
+TARGET_REF="${UPDATE_TARGET_REF:-}"
 STARTED="$(date -Iseconds)"
 
 # Write a status JSON with only safe, fixed-shape values (no user input → no escaping needed).
@@ -111,7 +114,11 @@ echo "snapshot PREV_SHA=$PREV_SHA" >> "$LOG"
 
 { git fetch --all --prune; } >> "$LOG" 2>&1 || { write_status "failed" "git fetch a échoué." "\"$(date -Iseconds)\""; exit 1; }
 { git checkout "$BRANCH"; } >> "$LOG" 2>&1 || { write_status "failed" "git checkout $BRANCH a échoué." "\"$(date -Iseconds)\""; exit 1; }
-{ git reset --hard "origin/$BRANCH"; } >> "$LOG" 2>&1 || rollback "git reset a échoué"
+# Forward update → latest on the branch; rollback → the requested commit.
+RESET_TO="origin/$BRANCH"
+[[ -n "$TARGET_REF" ]] && RESET_TO="$TARGET_REF"
+echo "reset target: $RESET_TO" >> "$LOG"
+{ git reset --hard "$RESET_TO"; } >> "$LOG" 2>&1 || rollback "git reset a échoué"
 
 write_status "running" "Build et migrations…" "null"
 { ./scripts/deploy.sh; } >> "$LOG" 2>&1 || rollback "le build/déploiement a échoué"

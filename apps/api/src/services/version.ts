@@ -157,6 +157,42 @@ function renderChangelog(raw: string): Changelog | null {
   return { markdown: blocks.join('\n\n'), count: commits.length };
 }
 
+export interface HistoryCommit {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  committedAt: string | null;
+}
+
+/** The most recent commits on the current checkout (newest first) — rollback candidates. */
+export async function getVersionHistory(n = 15): Promise<HistoryCommit[]> {
+  if (!repoRoot) return [];
+  try {
+    const { stdout } = await exec('git', ['log', `-${n}`, '--format=%H%x1f%h%x1f%cI%x1f%s'], { cwd: repoRoot });
+    return stdout
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => {
+        const [sha, shortSha, committedAt, subject] = l.split('\x1f');
+        return { sha: sha ?? '', shortSha: shortSha ?? '', committedAt: committedAt || null, subject: subject ?? '' };
+      });
+  } catch {
+    return [];
+  }
+}
+
+/** True when `ancestor` is an ancestor of `descendant` (git merge-base --is-ancestor exit 0). */
+export async function isAncestor(ancestor: string, descendant: string): Promise<boolean> {
+  if (!repoRoot) return false;
+  try {
+    await exec('git', ['merge-base', '--is-ancestor', ancestor, descendant], { cwd: repoRoot });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 interface GithubCommit {
   sha: string;
   html_url: string;
@@ -243,8 +279,12 @@ export function isUpdateStuck(status: UpdateStatus): boolean {
   return status.state === 'running' && status.startedAt !== null && Date.now() - Date.parse(status.startedAt) > STALE_RUNNING_MS;
 }
 
-/** Spawn the detached self-update script. It survives the PM2 reload it triggers. */
-export function startUpdate(env: Env): StartUpdateResult {
+/**
+ * Spawn the detached self-update script. It survives the PM2 reload it triggers. When `targetRef`
+ * is given, the checkout is reset to THAT commit (a rollback to a previous version) instead of the
+ * latest on the tracked branch — the build/health-check/auto-rollback safety net is identical.
+ */
+export function startUpdate(env: Env, targetRef?: string): StartUpdateResult {
   if (!env.SELF_UPDATE_ENABLED) return { ok: false, error: 'Self-update is disabled on this instance.' };
   if (!repoRoot) return { ok: false, error: 'This deployment is not a git checkout; update it manually.' };
   const current = readUpdateStatus();
@@ -281,7 +321,7 @@ export function startUpdate(env: Env): StartUpdateResult {
     cwd: repoRoot,
     detached: true,
     stdio: 'ignore',
-    env: { ...process.env, UPDATE_BRANCH: env.UPDATE_BRANCH },
+    env: { ...process.env, UPDATE_BRANCH: env.UPDATE_BRANCH, ...(targetRef ? { UPDATE_TARGET_REF: targetRef } : {}) },
   });
   child.unref();
   return { ok: true };

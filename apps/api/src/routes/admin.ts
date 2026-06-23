@@ -17,6 +17,8 @@ import {
   commitsBehind,
   getLocalVersion,
   getRemoteVersion,
+  getVersionHistory,
+  isAncestor,
   isUpdateStuck,
   readUpdateStatus,
   startUpdate,
@@ -184,6 +186,37 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const result = startUpdate(app.ctx.env);
     if (!result.ok) return reply.code(409).send({ error: result.error });
     await audit(req, 'admin.update.start');
+    return reply.code(202).send({ ok: true });
+  });
+
+  // GET /admin/version/history — recent commits on the checkout, as rollback candidates.
+  app.get('/version/history', async () => {
+    const [history, local] = await Promise.all([getVersionHistory(15), getLocalVersion()]);
+    return { history, currentSha: local.sha };
+  });
+
+  // POST /admin/rollback — roll the deployment back to a previous commit. The target must be a
+  // known ancestor of the current build (so this can only go BACKWARDS to a version that ran
+  // here), and the same health-checked, auto-rollback path as a forward update is used.
+  app.post('/rollback', async (req, reply) => {
+    const body = (req.body ?? {}) as { sha?: unknown };
+    const sha = typeof body.sha === 'string' ? body.sha.trim() : '';
+    if (!/^[0-9a-f]{7,40}$/.test(sha)) return reply.code(400).send({ error: 'A valid commit SHA is required' });
+
+    const local = await getLocalVersion();
+    if (!local.sha) return reply.code(400).send({ error: 'This deployment is not a git checkout' });
+    if (local.sha === sha || local.shortSha === sha) {
+      return reply.code(400).send({ error: 'That is already the running version' });
+    }
+    // Only allow rolling back to a commit that is an ancestor of HEAD (a version that ran here),
+    // never to arbitrary or future refs.
+    if (!(await isAncestor(sha, local.sha))) {
+      return reply.code(400).send({ error: 'Can only roll back to a previous version of this deployment' });
+    }
+
+    const result = startUpdate(app.ctx.env, sha);
+    if (!result.ok) return reply.code(409).send({ error: result.error });
+    await audit(req, 'admin.rollback.start', { target: sha });
     return reply.code(202).send({ ok: true });
   });
 

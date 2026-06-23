@@ -57,6 +57,9 @@ curl -H "Authorization: Bearer $TOKEN" -OJ "$HOST/api/v1/files/<FILE_ID>/downloa
 
 - Uploads count against your storage quota and are scanned by the antivirus, exactly like the web app.
 - Re-uploading a text file under the same name keeps the previous content as a version.
+- The REST API (and WebDAV) only expose your **personal** Drive. Zero-Knowledge vaults and
+  **Shared Spaces** are intentionally out of scope — vaults are blind to the server, and a shared
+  space is reachable only through the web app, gated by your membership of that space.
 - Errors: `401` invalid/expired token, `403` missing scope or wrong folder, `404` not found,
   `413` quota exceeded, `422` file rejected by antivirus.
 

@@ -6,7 +6,7 @@
  */
 import type { FastifyPluginAsync } from 'fastify';
 import { prisma } from '../db.js';
-import { getChangelog, getLocalVersion, getRecentChangelog } from '../services/version.js';
+import { getChangelog, getLocalVersion, getRecentChangelog, isAncestor } from '../services/version.js';
 
 export const versionRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', app.requireAuth);
@@ -30,6 +30,13 @@ export const versionRoutes: FastifyPluginAsync = async (app) => {
       return { show: false };
     }
     if (seen === local.sha) return { show: false };
+
+    // If the current build is an ancestor of what the user last saw, the deployment was rolled
+    // BACK — there is nothing "new" to announce, so just record the build silently.
+    if (await isAncestor(local.sha, seen)) {
+      await prisma.user.update({ where: { id: req.user!.id }, data: { lastSeenVersion: local.sha } });
+      return { show: false };
+    }
 
     // Notes for seen..current; if `seen` is unreachable (force-push/rebase), fall back to the
     // most recent commits so the user still sees something meaningful.

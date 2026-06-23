@@ -19,6 +19,7 @@ import { decryptServerFile } from '../services/download.js';
 import { storeUserFile, QuotaExhaustedError } from '../services/upload.js';
 import { FileTooLargeError, InfectedFileError } from '../services/ingest.js';
 import { trashFile, trashFolder } from '../services/trash.js';
+import { remainingAllowance } from '../services/quota.js';
 
 const PREFIX = '/dav';
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PROPFIND']);
@@ -84,9 +85,22 @@ async function resolvePath(ownerId: string, segments: string[]): Promise<Resolve
   return { type: 'missing', parentId, name: last };
 }
 
-function propXml(base: string, segments: string[], isCollection: boolean, name: string, size: number, mtime: Date, mime: string): string {
+function propXml(
+  base: string,
+  segments: string[],
+  isCollection: boolean,
+  name: string,
+  size: number,
+  mtime: Date,
+  mime: string,
+  quota?: { used: number; available: number },
+): string {
+  // RFC 4331 quota props make the OS show the account quota (not the server disk) on the mount.
+  const quotaXml = quota
+    ? `<D:quota-available-bytes>${quota.available}</D:quota-available-bytes><D:quota-used-bytes>${quota.used}</D:quota-used-bytes>`
+    : '';
   const props = isCollection
-    ? `<D:resourcetype><D:collection/></D:resourcetype>`
+    ? `<D:resourcetype><D:collection/></D:resourcetype>${quotaXml}`
     : `<D:resourcetype/><D:getcontentlength>${size}</D:getcontentlength><D:getcontenttype>${escapeXml(mime)}</D:getcontenttype>`;
   return (
     `<D:response><D:href>${escapeXml(hrefFor(base, segments, isCollection))}</D:href>` +
@@ -167,10 +181,20 @@ export const webdavRoutes: FastifyPluginAsync = async (app) => {
       if (node.type === 'invalid' || node.type === 'missing') return reply.code(404).send();
       const depth = String(req.headers.depth ?? '1');
       const parts: string[] = [];
+      // Report the account quota on the queried collection so the mount shows the right size.
+      let quota: { used: number; available: number } | undefined;
+      if (node.type !== 'file') {
+        const user = await prisma.user.findUnique({ where: { id: ownerId }, select: { usedBytes: true } });
+        const avail = await remainingAllowance(ownerId);
+        quota = {
+          used: Number(user?.usedBytes ?? 0n),
+          available: Number.isFinite(avail) ? Math.max(0, Math.floor(avail)) : 1_099_511_627_776, // 1 TiB if unlimited
+        };
+      }
       if (node.type === 'root') {
-        parts.push(propXml(base, [], true, 'OpenCoperLock', 0, new Date(), ''));
+        parts.push(propXml(base, [], true, 'OpenCoperLock', 0, new Date(), '', quota));
       } else if (node.type === 'folder') {
-        parts.push(propXml(base, segments, true, node.folder.name, 0, node.folder.createdAt, ''));
+        parts.push(propXml(base, segments, true, node.folder.name, 0, node.folder.createdAt, '', quota));
       } else {
         parts.push(propXml(base, segments, false, node.file.name, Number(node.file.sizeBytes), node.file.createdAt, node.file.mimeType));
       }

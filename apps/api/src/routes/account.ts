@@ -29,6 +29,7 @@ import { audit } from '../services/audit.js';
 import { generateUniqueQuickCode, isCodeTakenError } from '../services/quickCode.js';
 import { generateToken } from '../services/apiToken.js';
 import { sendTestEvent } from '../services/webhooks.js';
+import { trashFile, trashFolder, emptyTrash } from '../services/trash.js';
 
 export const accountRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', app.requireAuth);
@@ -63,7 +64,7 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
     const codeValue = body.code ?? (await generateUniqueQuickCode());
     if (body.code) {
       const clash = await prisma.quickUploadCode.findUnique({ where: { code: codeValue } });
-      if (clash) return reply.code(409).send({ error: 'This code is already in use' });
+      if (clash) return reply.code(403).send({ error: 'Access denied', code: 'UNAUTHORIZED' });
     }
 
     try {
@@ -82,7 +83,7 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(201).send({ code: toPublicQuickCode(code) });
     } catch (err) {
       // Lost a race for the same custom code between the check and the insert.
-      if (isCodeTakenError(err)) return reply.code(409).send({ error: 'This code is already in use' });
+      if (isCodeTakenError(err)) return reply.code(403).send({ error: 'Access denied', code: 'UNAUTHORIZED' });
       throw err;
     }
   });
@@ -191,6 +192,46 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
     if (!existing) return reply.code(404).send({ error: 'Token not found' });
     await prisma.apiToken.delete({ where: { id } });
     await audit(req, 'account.apitoken.delete', { target: id });
+    return { ok: true };
+  });
+
+  // GET/PATCH /account/auto-delete — opt-in inactivity wipe ("delete my files if I don't log in
+  // for N days"). A daily maintenance job enforces it.
+  app.get('/auto-delete', async (req) => {
+    const u = await prisma.user.findUniqueOrThrow({
+      where: { id: req.user!.id },
+      select: { autoDeleteAfterDays: true, lastLoginAt: true },
+    });
+    return { autoDeleteAfterDays: u.autoDeleteAfterDays, lastLoginAt: u.lastLoginAt?.toISOString() ?? null };
+  });
+
+  app.patch('/auto-delete', async (req, reply) => {
+    const v = (req.body as { autoDeleteAfterDays?: unknown }).autoDeleteAfterDays;
+    let days: number | null;
+    if (v === null || v === undefined || v === 0) days = null; // off
+    else if (typeof v === 'number' && Number.isInteger(v) && v >= 7 && v <= 3650) days = v;
+    else return reply.code(400).send({ error: 'Invalid value' });
+    await prisma.user.update({ where: { id: req.user!.id }, data: { autoDeleteAfterDays: days } });
+    await audit(req, 'account.autodelete.set', { target: String(days) });
+    return { autoDeleteAfterDays: days };
+  });
+
+  // POST /account/wipe — permanently delete ALL of the user's spaces & files (password-gated).
+  // The account itself is kept; this is the "start fresh" / panic button.
+  app.post('/wipe', async (req, reply) => {
+    const body = parseOr400(reply, passwordConfirmSchema, req.body);
+    if (!body) return;
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.id } });
+    if (!(await verifyPassword(user.passwordHash, body.password))) {
+      return reply.code(401).send({ error: 'Incorrect password' });
+    }
+    // Trash every top-level space and any root-level files, then purge the trash — irreversible.
+    const folders = await prisma.folder.findMany({ where: { ownerId: user.id, parentId: null, deletedAt: null }, select: { id: true } });
+    for (const f of folders) await trashFolder(user.id, f.id);
+    const rootFiles = await prisma.fileObject.findMany({ where: { ownerId: user.id, folderId: null, deletedAt: null }, select: { id: true } });
+    for (const f of rootFiles) await trashFile(user.id, f.id);
+    await emptyTrash(app.ctx, user.id);
+    await audit(req, 'account.wipe');
     return { ok: true };
   });
 

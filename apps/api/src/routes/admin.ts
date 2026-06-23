@@ -248,7 +248,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const codeValue = body.code ?? (await generateUniqueQuickCode());
     if (body.code) {
       const clash = await prisma.quickUploadCode.findUnique({ where: { code: codeValue } });
-      if (clash) return reply.code(409).send({ error: 'This code is already in use' });
+      if (clash) return reply.code(403).send({ error: 'Access denied', code: 'UNAUTHORIZED' });
     }
 
     try {
@@ -266,7 +266,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
       await audit(req, 'admin.quickcode.create', { target: code.id });
       return reply.code(201).send({ code: toPublicQuickCode(code) });
     } catch (err) {
-      if (isCodeTakenError(err)) return reply.code(409).send({ error: 'This code is already in use' });
+      if (isCodeTakenError(err)) return reply.code(403).send({ error: 'Access denied', code: 'UNAUTHORIZED' });
       throw err;
     }
   });

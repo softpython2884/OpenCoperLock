@@ -53,16 +53,18 @@ export default function AccountPage() {
   const [newToken, setNewToken] = useState<string | null>(null);
   const [webhooks, setWebhooks] = useState<PublicWebhook[]>([]);
   const [nw, setNw] = useState({ url: '', secret: '', folderId: '' });
+  const [autoDelete, setAutoDelete] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [s, sess, qc, fl, tk, wh] = await Promise.all([
+    const [s, sess, qc, fl, tk, wh, ad] = await Promise.all([
       api.get<TwoFaStatus>('/2fa/status'),
       api.get<{ sessions: SessionInfo[] }>('/auth/sessions'),
       api.get<{ codes: PublicQuickCode[] }>('/account/quick-codes'),
       api.get<{ folders: PublicFolder[] }>('/folders'),
       api.get<{ tokens: PublicApiToken[] }>('/account/api-tokens'),
       api.get<{ webhooks: PublicWebhook[] }>('/account/webhooks'),
+      api.get<{ autoDeleteAfterDays: number | null }>('/account/auto-delete'),
     ]);
     setStatus(s);
     setSessions(sess.sessions);
@@ -70,6 +72,7 @@ export default function AccountPage() {
     setFolders(fl.folders);
     setTokens(tk.tokens);
     setWebhooks(wh.webhooks);
+    setAutoDelete(ad.autoDeleteAfterDays);
   }, []);
 
   useEffect(() => {
@@ -147,6 +150,21 @@ export default function AccountPage() {
       await api.post('/account/delete', { password });
       await refresh();
       router.replace('/login');
+    });
+  }
+
+  async function wipeSpaces() {
+    const password = await prompt({
+      title: t('account.wipeTitle'),
+      message: t('account.wipeMsg'),
+      label: t('account.confirmPassword'),
+      password: true,
+    });
+    if (!password) return;
+    await wrap(async () => {
+      await api.post('/account/wipe', { password });
+      await refresh();
+      toast(t('account.wipeDone'), 'success');
     });
   }
 
@@ -507,16 +525,45 @@ export default function AccountPage() {
         <p className="text-xs text-neutral-400">{t('account.webdavCreds')}</p>
       </section>
 
+      {/* Inactivity auto-delete */}
+      <section className="card space-y-3">
+        <h2 className="font-semibold">{t('account.autoDeleteTitle')}</h2>
+        <p className="text-sm text-neutral-500">{t('account.autoDeleteHint')}</p>
+        <Select
+          className="w-[16rem]"
+          value={autoDelete === null ? '' : String(autoDelete)}
+          onChange={(v) =>
+            wrap(async () => {
+              const days = v === '' ? null : Number(v);
+              const res = await api.patch<{ autoDeleteAfterDays: number | null }>('/account/auto-delete', { autoDeleteAfterDays: days });
+              setAutoDelete(res.autoDeleteAfterDays);
+              toast(t('account.saved'), 'success');
+            })
+          }
+          options={[
+            { value: '', label: t('account.autoDeleteNever') },
+            { value: '30', label: t('account.autoDelete1m') },
+            { value: '90', label: t('account.autoDelete3m') },
+            { value: '180', label: t('account.autoDelete6m') },
+            { value: '365', label: t('account.autoDelete1y') },
+          ]}
+        />
+        {autoDelete !== null && <p className="text-xs text-amber-300">⚠️ {t('account.autoDeleteActive', { days: autoDelete })}</p>}
+      </section>
+
       {/* Data & privacy (GDPR) */}
       <section className="card space-y-3">
         <h2 className="font-semibold">{t('account.yourData')}</h2>
         <p className="text-sm text-neutral-500">
           {t('account.dataHint')}
         </p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <a className="btn-ghost" href={`${API_URL}/account/export`}>
             {t('account.exportData')}
           </a>
+          <button className="btn-danger" onClick={wipeSpaces}>
+            {t('account.wipeSpaces')}
+          </button>
           <button className="btn-danger" onClick={deleteAccount}>
             {t('account.deleteAccount')}
           </button>

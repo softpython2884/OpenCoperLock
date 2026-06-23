@@ -63,6 +63,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
         ip: req.ip,
         userAgent: req.headers['user-agent'] ?? null,
       });
+      // Record the login so the optional inactivity auto-wipe has a fresh activity timestamp.
+      await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
       setSessionCookie(reply, session.id, session.expiresAt, secureCookies);
       await audit(req, 'auth.login', { actorId: user.id });
       return { user: toPublicUser(user), csrfToken: session.csrfSecret };

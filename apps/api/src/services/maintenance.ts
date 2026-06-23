@@ -11,7 +11,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { AppContext } from '../context.js';
 import { prisma } from '../db.js';
-import { purgeExpiredTrash } from './trash.js';
+import { purgeExpiredTrash, trashFile, trashFolder, emptyTrash } from './trash.js';
 
 export interface ReconcileResult {
   usersChecked: number;
@@ -98,6 +98,39 @@ export async function pruneThrottle(): Promise<number> {
   return res.count;
 }
 
+/**
+ * Opt-in inactivity wipe: for users who set `autoDeleteAfterDays`, permanently delete ALL their
+ * files once they haven't logged in for that long. The account itself is kept. Irreversible.
+ */
+export async function enforceInactivityWipe(ctx: AppContext, log: FastifyBaseLogger): Promise<number> {
+  const candidates = await prisma.user.findMany({
+    where: { autoDeleteAfterDays: { not: null } },
+    select: { id: true, autoDeleteAfterDays: true, lastLoginAt: true, createdAt: true },
+  });
+  const now = Date.now();
+  let wiped = 0;
+  for (const u of candidates) {
+    const days = u.autoDeleteAfterDays!;
+    const last = (u.lastLoginAt ?? u.createdAt).getTime();
+    if (now - last < days * 24 * 60 * 60 * 1000) continue;
+
+    const folders = await prisma.folder.findMany({
+      where: { ownerId: u.id, parentId: null, deletedAt: null },
+      select: { id: true },
+    });
+    for (const f of folders) await trashFolder(u.id, f.id);
+    const rootFiles = await prisma.fileObject.findMany({
+      where: { ownerId: u.id, folderId: null, deletedAt: null },
+      select: { id: true },
+    });
+    for (const f of rootFiles) await trashFile(u.id, f.id);
+    await emptyTrash(ctx, u.id);
+    log.warn({ userId: u.id, days }, 'inactivity auto-wipe: permanently deleted all files');
+    wiped += 1;
+  }
+  return wiped;
+}
+
 /** Run one full maintenance pass. Safe to call manually (admin) or on a timer. */
 export async function runMaintenance(ctx: AppContext, log: FastifyBaseLogger) {
   // Purge Trash past its retention window first, so reconcile/orphan steps see the freed space.
@@ -108,6 +141,7 @@ export async function runMaintenance(ctx: AppContext, log: FastifyBaseLogger) {
   const audit = await pruneAuditLog(ctx.env.AUDIT_RETENTION_DAYS);
   const jobs = await pruneJobs(ctx.env.JOB_RETENTION_DAYS);
   const throttle = await pruneThrottle();
+  const inactivityWiped = await enforceInactivityWipe(ctx, log);
   const summary = {
     trashPurged,
     usersAdjusted: reconcile.usersAdjusted,
@@ -115,6 +149,7 @@ export async function runMaintenance(ctx: AppContext, log: FastifyBaseLogger) {
     auditPruned: audit,
     jobsPruned: jobs,
     throttlePruned: throttle,
+    inactivityWiped,
   };
   log.info(summary, 'maintenance pass complete');
   return summary;

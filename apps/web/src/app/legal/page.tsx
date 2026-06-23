@@ -37,6 +37,7 @@ export default function LegalIndexPage() {
 
       <h2>Documents</h2>
       <ul>
+        <li><Link href="/docs">Documentation</Link></li>
         <li><Link href="/legal/terms">Conditions d’utilisation</Link></li>
         <li><Link href="/legal/privacy">Politique de confidentialité</Link></li>
         <li><Link href="/legal/license">Licence (GNU AGPLv3)</Link></li>

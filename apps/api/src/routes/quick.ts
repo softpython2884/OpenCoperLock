@@ -34,11 +34,21 @@ function isUsedUp(usageLimit: number | null, usageCount: number): boolean {
 export const quickRoutes: FastifyPluginAsync = async (app) => {
   // GET /quick/:code — lightweight validity probe for the guest UI.
   app.get('/:code', async (req, reply) => {
+    // Throttle blind enumeration per IP, and NEVER reveal whether a code exists: an invalid,
+    // expired or used-up code returns the same generic "access denied" as any other.
+    const ipKey = `probe:${req.ip}`;
+    const lock = await checkLock('quick', ipKey);
+    if (lock.locked) {
+      reply.header('Retry-After', String(lock.retryAfterSec));
+      return reply.code(429).send({ error: 'Too many attempts. Try again later.', code: 'LOCKED' });
+    }
     const code = String((req.params as { code: string }).code).toUpperCase();
     const entry = await prisma.quickUploadCode.findUnique({ where: { code } });
     if (!entry || isExpired(entry.expiresAt) || isUsedUp(entry.usageLimit, entry.usageCount)) {
-      return reply.code(404).send({ error: 'Code not found or no longer active' });
+      await recordFailure('quick', ipKey, QUICK_THROTTLE);
+      return reply.code(403).send({ error: 'Access denied', code: 'UNAUTHORIZED' });
     }
+    await clearFailures('quick', ipKey);
     return { valid: true, requiresPassword: entry.passwordHash !== null };
   });
 
@@ -51,7 +61,9 @@ export const quickRoutes: FastifyPluginAsync = async (app) => {
       const code = String((req.params as { code: string }).code).toUpperCase();
       const entry = await prisma.quickUploadCode.findUnique({ where: { code } });
       if (!entry || isExpired(entry.expiresAt) || isUsedUp(entry.usageLimit, entry.usageCount)) {
-        return reply.code(404).send({ error: 'Code not found or no longer active' });
+        // Same generic response as the probe — no enumeration oracle, throttled per IP.
+        await recordFailure('quick', `probe:${req.ip}`, QUICK_THROTTLE);
+        return reply.code(403).send({ error: 'Access denied', code: 'UNAUTHORIZED' });
       }
 
       // Ban an IP that keeps guessing this code's password. Keyed per (code, IP) so one

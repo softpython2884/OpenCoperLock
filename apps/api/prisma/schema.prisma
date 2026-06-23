@@ -58,6 +58,10 @@ model User {
   // Two-factor (TOTP). `totpSecret` is also used as the pending secret during setup.
   totpSecret   String?
   totpEnabled  Boolean  @default(false)
+  // Last successful login, used by the optional inactivity auto-wipe.
+  lastLoginAt  DateTime?
+  // If set, a daily job permanently deletes the user's files after this many days without a login.
+  autoDeleteAfterDays Int?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

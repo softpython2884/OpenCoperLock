@@ -11,8 +11,10 @@ the source.
 
 ## 📚 Documentation
 
-- **In-app guide** — once running, open **Documentation** in the app sidebar (`/docs`):
-  spaces & vaults, Quick-Upload, API tokens, webhooks, WebDAV and keyboard shortcuts.
+- **Full documentation (website)** — a complete, public guide lives at **`/docs`** on any
+  instance (no login). It covers every feature with “what it is / what you can do / how”:
+  spaces & vaults, files & versions, sharing, Quick-Upload, Remote-Upload, the REST API,
+  webhooks, WebDAV, security, account & admin, mobile/PWA, and the keyboard shortcuts.
 - **[REST API & integrations](docs/API.md)** — personal API tokens, the `/api/v1` endpoints,
   outgoing webhooks, and mounting the Drive over **WebDAV** (with `curl`/`rclone` examples).
 - **[Deployment](docs/DEPLOYMENT.md)** — bare-metal (PM2) and Docker, behind nginx.

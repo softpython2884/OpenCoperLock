@@ -551,6 +551,7 @@ const fr: Dict = {
   'whatsnew.version': 'Version {version}',
   'whatsnew.changes': '{count} changement(s)',
   'whatsnew.more': '+{count} autres changements',
+  'whatsnew.viewOnGithub': 'Voir le détail sur GitHub',
   'whatsnew.gotIt': 'J’ai compris',
   'whatsnew.dismiss': 'Fermer',
   // shared spaces
@@ -1148,6 +1149,7 @@ const en: Dict = {
   'whatsnew.version': 'Version {version}',
   'whatsnew.changes': '{count} change(s)',
   'whatsnew.more': '+{count} more changes',
+  'whatsnew.viewOnGithub': 'View the details on GitHub',
   'whatsnew.gotIt': 'Got it',
   'whatsnew.dismiss': 'Close',
   // shared spaces

@@ -11,7 +11,7 @@
  */
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
+import { X, ExternalLink } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useT } from '@/lib/i18n';
@@ -26,6 +26,7 @@ interface WhatsNew {
   version?: string;
   entries?: ChangelogEntry[];
   count?: number;
+  githubUrl?: string | null;
 }
 
 export function WhatsNew() {
@@ -93,7 +94,19 @@ export function WhatsNew() {
           {extra > 0 && <li className="border-t border-white/[0.05] py-2.5 text-xs italic text-zinc-500">{t('whatsnew.more', { count: extra })}</li>}
         </ul>
 
-        <div className="border-t border-white/[0.07] px-6 py-3.5 text-right">
+        <div className="flex items-center justify-between gap-3 border-t border-white/[0.07] px-6 py-3.5">
+          {data.githubUrl ? (
+            <a
+              href={data.githubUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs text-violet-300 transition hover:text-violet-200"
+            >
+              {t('whatsnew.viewOnGithub')} <ExternalLink size={13} />
+            </a>
+          ) : (
+            <span />
+          )}
           <button className="btn-primary" onClick={dismiss}>
             {t('whatsnew.gotIt')}
           </button>

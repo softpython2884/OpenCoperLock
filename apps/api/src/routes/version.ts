@@ -40,12 +40,21 @@ export const versionRoutes: FastifyPluginAsync = async (app) => {
 
     // Notes for seen..current; if `seen` is unreachable (force-push/rebase), fall back to the
     // most recent commits so the user still sees something meaningful.
-    const log = (await getChangelog(seen, local.sha)) ?? (await getRecentChangelog(20));
+    const ranged = await getChangelog(seen, local.sha);
+    const log = ranged ?? (await getRecentChangelog(20));
     if (!log) {
       await prisma.user.update({ where: { id: req.user!.id }, data: { lastSeenVersion: local.sha } });
       return { show: false };
     }
-    return { show: true, version: local.shortSha, entries: log.entries, count: log.count };
+    // A link to the full detail on GitHub: the compare view (every commit + diff since the user's
+    // last build) when we have a real range, else the current commit when we fell back.
+    const repo = app.ctx.env.GITHUB_REPO;
+    const githubUrl = repo
+      ? ranged
+        ? `https://github.com/${repo}/compare/${seen}...${local.sha}`
+        : `https://github.com/${repo}/commit/${local.sha}`
+      : null;
+    return { show: true, version: local.shortSha, entries: log.entries, count: log.count, githubUrl };
   });
 
   // POST /version/whats-new/seen — dismiss the dialog for the current build.

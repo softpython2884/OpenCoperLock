@@ -69,6 +69,8 @@ model User {
   lastLoginAt  DateTime?
   // If set, a daily job permanently deletes the user's files after this many days without a login.
   autoDeleteAfterDays Int?
+  // Days an item stays in the Trash before it is auto-purged. 0 = never auto-purge.
+  trashRetentionDays Int     @default(7)
   // The build (git SHA) for which this user last dismissed the "What's new" dialog. null until
   // they first load the app; lets us show release notes exactly once per update, per user.
   lastSeenVersion String?

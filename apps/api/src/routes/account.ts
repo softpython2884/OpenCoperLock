@@ -216,6 +216,26 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
     return { autoDeleteAfterDays: days };
   });
 
+  // GET/PATCH /account/trash-retention — how many days items linger in the Trash before being
+  // auto-purged (0 = never; the user empties it manually).
+  app.get('/trash-retention', async (req) => {
+    const u = await prisma.user.findUniqueOrThrow({
+      where: { id: req.user!.id },
+      select: { trashRetentionDays: true },
+    });
+    return { trashRetentionDays: u.trashRetentionDays };
+  });
+
+  app.patch('/trash-retention', async (req, reply) => {
+    const v = (req.body as { trashRetentionDays?: unknown }).trashRetentionDays;
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 3650) {
+      return reply.code(400).send({ error: 'trashRetentionDays must be an integer between 0 and 3650' });
+    }
+    await prisma.user.update({ where: { id: req.user!.id }, data: { trashRetentionDays: v } });
+    await audit(req, 'account.trashretention.set', { target: String(v) });
+    return { trashRetentionDays: v };
+  });
+
   // POST /account/wipe — permanently delete ALL of the user's spaces & files (password-gated).
   // The account itself is kept; this is the "start fresh" / panic button.
   app.post('/wipe', async (req, reply) => {

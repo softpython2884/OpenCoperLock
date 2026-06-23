@@ -9,7 +9,7 @@ import { zkFileMetaSchema } from '@opencoperlock/shared';
 import { prisma } from '../db.js';
 import { newStorageKey } from '../storage/index.js';
 import { adjustUsage, remainingAllowance } from '../services/quota.js';
-import { trashFile } from '../services/trash.js';
+import { hardDeleteFile } from '../services/trash.js';
 import { audit } from '../services/audit.js';
 import { FileTooLargeError } from '../services/ingest.js';
 import { Transform, pipeline, type Readable } from 'node:stream';
@@ -218,15 +218,17 @@ export const zkRoutes: FastifyPluginAsync = async (app) => {
     return reply.send(app.ctx.storage.createReadStream(file.storageKey));
   });
 
-  // DELETE /zk/files/:id — move a vault file to the Trash (soft-delete).
+  // DELETE /zk/files/:id — permanently delete a vault file immediately (NOT via the Trash).
+  // Vault content is opaque ciphertext the server can't preview or meaningfully restore, so a
+  // recoverable Trash adds nothing — deleting means gone, and the quota is freed at once.
   app.delete('/files/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
     const file = await prisma.fileObject.findFirst({
       where: { id, ownerId: req.user!.id, encMode: 'ZK', deletedAt: null },
     });
     if (!file) return reply.code(404).send({ error: 'File not found' });
-    await trashFile(req.user!.id, file.id);
-    await audit(req, 'zk.trash', { target: file.id });
+    await hardDeleteFile(app.ctx, req.user!.id, file.id);
+    await audit(req, 'zk.delete', { target: file.id });
     return { ok: true };
   });
 };

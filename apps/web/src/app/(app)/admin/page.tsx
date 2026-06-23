@@ -6,7 +6,7 @@ import { formatBytes } from '@opencoperlock/shared/client';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useT } from '@/lib/i18n';
-import { confirm, prompt } from '@/components/ui/overlays';
+import { confirm, prompt, toast } from '@/components/ui/overlays';
 import { Select } from '@/components/ui/Select';
 import { UpdatePanel } from './UpdatePanel';
 
@@ -243,6 +243,24 @@ export default function AdminPage() {
                   onClick={() => wrap(() => api.patch(`/admin/users/${u.id}`, { disabled: !u.disabled }))}
                 >
                   {u.disabled ? t('admin.enable') : t('admin.disable')}
+                </button>
+                <button
+                  className="btn-ghost px-2 py-1"
+                  onClick={async () => {
+                    if (
+                      await confirm({
+                        title: t('admin.purgeContentTitle', { email: u.email }),
+                        message: t('admin.purgeContentMsg'),
+                        danger: true,
+                        confirmLabel: t('admin.purgeContentBtn'),
+                      })
+                    ) {
+                      await wrap(() => api.post(`/admin/users/${u.id}/purge-content`));
+                      toast(t('admin.purgeContentDone'), 'success');
+                    }
+                  }}
+                >
+                  {t('admin.purgeContent')}
                 </button>
                 <button
                   className="btn-danger px-2 py-1"

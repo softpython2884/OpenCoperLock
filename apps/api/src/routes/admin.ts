@@ -12,6 +12,7 @@ import { generateUniqueQuickCode, isCodeTakenError } from '../services/quickCode
 import { toPublicQuickCode, toPublicUser } from '../lib/serialize.js';
 import { getGlobalCapBytes, getGlobalUsedBytes } from '../services/quota.js';
 import { ensureFastUploadFolder } from '../services/systemFolders.js';
+import { wipeOwnerContent } from '../services/trash.js';
 import { runMaintenance } from '../services/maintenance.js';
 import {
   commitsBehind,
@@ -124,6 +125,18 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     await prisma.user.delete({ where: { id } });
     await audit(req, 'admin.user.delete', { target: id });
     return { ok: true };
+  });
+
+  // POST /admin/users/:id/purge-content — empty a user's storage (all files, folders and the
+  // Shared Spaces they own) WITHOUT deleting the account. Frees their quota; the account, its
+  // login and settings remain.
+  app.post('/users/:id/purge-content', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const target = await prisma.user.findUnique({ where: { id } });
+    if (!target) return reply.code(404).send({ error: 'User not found' });
+    const result = await wipeOwnerContent(app.ctx, id);
+    await audit(req, 'admin.user.purgeContent', { target: id });
+    return result;
   });
 
   // ── Operational alerts ───────────────────────────────────────────────────--

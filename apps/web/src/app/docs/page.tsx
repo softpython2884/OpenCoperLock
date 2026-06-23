@@ -145,7 +145,8 @@ export default function DocsPage() {
           ul: [
             L('Ré-uploader un fichier texte du même nom conserve l’ancien comme version.', 'Re-uploading a same-named text file keeps the old one as a version.'),
             L('Historique des versions avec diff ligne par ligne et restauration.', 'Version history with a line-by-line diff and restore.'),
-            L('Suppression = corbeille (restaurable), puis purge automatique après expiration.', 'Delete = trash (restorable), then automatic purge after expiry.'),
+            L('Suppression = corbeille (restaurable). Vous choisissez le délai avant purge automatique (défaut 7 jours, ou « Jamais »).', 'Delete = trash (restorable). You pick the delay before auto-purge (default 7 days, or “Never”).'),
+            L('Exception : les fichiers d’un coffre Zero-Knowledge sont supprimés immédiatement, sans passer par la corbeille.', 'Exception: Zero-Knowledge vault files are deleted immediately, bypassing the Trash.'),
           ],
         },
       ],
@@ -409,6 +410,7 @@ curl -H "Authorization: Bearer ocl_…" -F "file=@backup.tgz" \\
         {
           ul: [
             L('Utilisateurs : créer, définir un quota par utilisateur, activer/désactiver.', 'Users: create, set a per-user quota, enable/disable.'),
+            L('Vider le stockage d’un utilisateur (fichiers, dossiers et espaces qu’il possède) sans supprimer son compte.', 'Empty a user’s storage (their files, folders and owned spaces) without deleting the account.'),
             L('Plafond de stockage global de l’instance.', 'Instance-wide storage cap.'),
             L('Clé VirusTotal configurable depuis le panneau (prime sur le .env, appliquée à chaud).', 'VirusTotal key configurable from the panel (overrides .env, applied live).'),
             L('Vue globale des codes Quick-Upload et journal d’audit.', 'Global view of Quick-Upload codes and the audit log.'),

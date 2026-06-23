@@ -12,6 +12,7 @@ import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useT } from '@/lib/i18n';
 import { fileVisual } from '@/lib/fileType';
+import { Select } from '@/components/ui/Select';
 import { confirm, toast } from '@/components/ui/overlays';
 
 interface TrashEntry {
@@ -28,6 +29,7 @@ export default function TrashPage() {
   const [entries, setEntries] = useState<TrashEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [retention, setRetention] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     const res = await api.get<{ entries: TrashEntry[] }>('/trash');
@@ -40,7 +42,21 @@ export default function TrashPage() {
       setError(String(e));
       setLoading(false);
     });
+    void api
+      .get<{ trashRetentionDays: number }>('/account/trash-retention')
+      .then((r) => setRetention(r.trashRetentionDays))
+      .catch(() => {});
   }, [load]);
+
+  async function changeRetention(days: number) {
+    setRetention(days);
+    try {
+      await api.patch('/account/trash-retention', { trashRetentionDays: days });
+      toast(t('trash.retentionSaved'), 'success');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('common.opFailed'));
+    }
+  }
 
   async function restore(e: TrashEntry) {
     try {
@@ -101,6 +117,22 @@ export default function TrashPage() {
       </div>
 
       {error && <div className="rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-sm text-red-300">{error}</div>}
+
+      {retention !== null && (
+        <div className="card flex flex-wrap items-center justify-between gap-3 py-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-zinc-200">{t('trash.autoPurge')}</p>
+            <p className="text-xs text-zinc-500">{t('trash.autoPurgeHint')}</p>
+          </div>
+          <Select
+            className="w-44"
+            value={String(retention)}
+            onChange={(v) => changeRetention(Number(v))}
+            options={[1, 7, 14, 30, 90].map((n) => ({ value: String(n), label: t('trash.retentionDays', { count: n }) }))
+              .concat([{ value: '0', label: t('trash.retentionNever') }])}
+          />
+        </div>
+      )}
 
       {loading ? (
         <p className="text-sm text-zinc-500">{t('common.loading')}</p>

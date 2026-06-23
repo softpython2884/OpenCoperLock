@@ -3,7 +3,7 @@ import { createFolderSchema, randomToken, updateFolderSchema } from '@opencoperl
 import { prisma } from '../db.js';
 import { parseOr400 } from '../lib/validate.js';
 import { toPublicFolder } from '../lib/serialize.js';
-import { trashFolder } from '../services/trash.js';
+import { hardDeleteFolder, trashFolder } from '../services/trash.js';
 import { audit } from '../services/audit.js';
 
 /** Collect a folder's id plus all descendant ids (breadth-first), scoped to one owner's personal
@@ -103,10 +103,17 @@ export const folderRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  // DELETE /folders/:id — move the folder (and its whole subtree) to the Trash. Nothing is
-  // destroyed and no quota is released until it is purged from the Trash.
+  // DELETE /folders/:id — Trash a normal folder (recoverable). A Zero-Knowledge vault is instead
+  // permanently deleted at once: its contents are opaque ciphertext with no use in a Trash.
   app.delete('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
+    const folder = await prisma.folder.findFirst({ where: { id, ownerId: req.user!.id, spaceId: null } });
+    if (!folder) return reply.code(404).send({ error: 'Folder not found' });
+    if (folder.isZeroKnowledge) {
+      await hardDeleteFolder(app.ctx, req.user!.id, id);
+      await audit(req, 'folder.delete', { target: id });
+      return { ok: true };
+    }
     const ok = await trashFolder(req.user!.id, id);
     if (!ok) return reply.code(404).send({ error: 'Folder not found' });
     await audit(req, 'folder.trash', { target: id });

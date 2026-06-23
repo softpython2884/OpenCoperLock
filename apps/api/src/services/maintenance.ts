@@ -11,7 +11,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { AppContext } from '../context.js';
 import { prisma } from '../db.js';
-import { purgeExpiredTrash, trashFile, trashFolder, emptyTrash } from './trash.js';
+import { purgeExpiredTrashPerUser, trashFile, trashFolder, emptyTrash } from './trash.js';
 
 export interface ReconcileResult {
   usersChecked: number;
@@ -133,9 +133,9 @@ export async function enforceInactivityWipe(ctx: AppContext, log: FastifyBaseLog
 
 /** Run one full maintenance pass. Safe to call manually (admin) or on a timer. */
 export async function runMaintenance(ctx: AppContext, log: FastifyBaseLogger) {
-  // Purge Trash past its retention window first, so reconcile/orphan steps see the freed space.
-  const trashCutoff = new Date(Date.now() - ctx.env.TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000);
-  const trashPurged = await purgeExpiredTrash(ctx, trashCutoff);
+  // Purge each user's Trash per their own retention setting first, so the reconcile/orphan steps
+  // below see the freed space.
+  const trashPurged = await purgeExpiredTrashPerUser(ctx);
   const reconcile = await reconcileUsage();
   const orphans = await collectOrphans(ctx, ctx.env.ORPHAN_GRACE_HOURS, log);
   const audit = await pruneAuditLog(ctx.env.AUDIT_RETENTION_DAYS);

@@ -5,7 +5,7 @@ import { parseOr400 } from '../lib/validate.js';
 import { FileTooLargeError, InfectedFileError } from '../services/ingest.js';
 import { storeUserFile, QuotaExhaustedError } from '../services/upload.js';
 import { decryptServerFile } from '../services/download.js';
-import { trashFile } from '../services/trash.js';
+import { hardDeleteFile, trashFile } from '../services/trash.js';
 import { pruneVersions, snapshotVersion } from '../services/versioning.js';
 import { adjustUsage } from '../services/quota.js';
 import { toPublicFile } from '../lib/serialize.js';
@@ -212,10 +212,18 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     return { file: toPublicFile(updated) };
   });
 
-  // DELETE /files/:id — move the file to the Trash (soft-delete). It keeps counting against
-  // quota until it is restored or permanently purged from the Trash.
+  // DELETE /files/:id — Trash a normal file (recoverable, still counts against quota until
+  // purged). A Zero-Knowledge file is permanently deleted at once instead (opaque ciphertext has
+  // no business sitting in a recoverable Trash); this also frees its quota immediately.
   app.delete('/:id', async (req, reply) => {
     const { id } = req.params as { id: string };
+    const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id, spaceId: null } });
+    if (!file) return reply.code(404).send({ error: 'File not found' });
+    if (file.encMode === 'ZK') {
+      await hardDeleteFile(app.ctx, req.user!.id, id);
+      await audit(req, 'file.delete', { target: id });
+      return { ok: true };
+    }
     const ok = await trashFile(req.user!.id, id);
     if (!ok) return reply.code(404).send({ error: 'File not found' });
     await audit(req, 'file.trash', { target: id });

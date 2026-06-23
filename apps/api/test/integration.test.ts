@@ -898,6 +898,100 @@ runIf('API integration', () => {
     });
   });
 
+  describe('zero-knowledge instant delete', () => {
+    it('permanently deletes a vault file at once (never via the Trash) and frees quota', async () => {
+      const user = await createUser({ email: 'zkdel@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 'zkdel@test.local', 'correct-horse-battery');
+      const vault = await app.inject({ method: 'POST', url: '/folders', headers: authHeaders(auth), payload: { name: 'vault', isZeroKnowledge: true } });
+      const folderId = vault.json().folder.id as string;
+
+      const cipher = Buffer.from('opaque-zk-bytes-to-delete');
+      const form = new FormData();
+      form.append('meta', JSON.stringify({ folderId, encryptedName: 'iv.ct', iv: 'aXY=', wrappedKey: 'aXY=.d3I=', encMode: 'ZK' }));
+      form.append('file', cipher, { filename: 'blob', contentType: 'application/octet-stream' });
+      const up = await app.inject({ method: 'POST', url: '/zk/files', payload: form.getBuffer(), headers: { ...form.getHeaders(), ...authHeaders(auth) } });
+      const id = up.json().id as string;
+      expect(Number((await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).usedBytes)).toBe(cipher.length);
+
+      const del = await app.inject({ method: 'DELETE', url: `/zk/files/${id}`, headers: authHeaders(auth) });
+      expect(del.statusCode).toBe(200);
+
+      // Gone for good, not in the Trash, and the quota is freed immediately.
+      expect(await prisma.fileObject.findUnique({ where: { id } })).toBeNull();
+      const trash = await app.inject({ method: 'GET', url: '/trash', headers: { cookie: auth.cookie } });
+      expect(trash.json().entries.length).toBe(0);
+      expect(Number((await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).usedBytes)).toBe(0);
+    });
+  });
+
+  describe('per-user trash retention', () => {
+    it('auto-purges only past a user\'s own retention window', async () => {
+      const user = await createUser({ email: 'ret@test.local', password: 'correct-horse-battery', role: 'ADMIN' });
+      const auth = await login(app, 'ret@test.local', 'correct-horse-battery');
+
+      // Trash a file and backdate its deletion to 10 days ago.
+      const up = await uploadFile(app, '/files', auth, 'old.txt', Buffer.from('stale'));
+      const fileId = up.json().file.id as string;
+      await app.inject({ method: 'DELETE', url: `/files/${fileId}`, headers: authHeaders(auth) });
+      const tenDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+      await prisma.fileObject.update({ where: { id: fileId }, data: { deletedAt: tenDaysAgo } });
+
+      // Retention 7 (default) → the 10-day-old item is purged by maintenance.
+      await app.inject({ method: 'POST', url: '/admin/maintenance', headers: authHeaders(auth) });
+      expect(await prisma.fileObject.findUnique({ where: { id: fileId } })).toBeNull();
+
+      // Retention 0 ("Never") → a stale item is kept.
+      await prisma.user.update({ where: { id: user.id }, data: { trashRetentionDays: 0 } });
+      const up2 = await uploadFile(app, '/files', auth, 'keep.txt', Buffer.from('stale2'));
+      const fileId2 = up2.json().file.id as string;
+      await app.inject({ method: 'DELETE', url: `/files/${fileId2}`, headers: authHeaders(auth) });
+      await prisma.fileObject.update({ where: { id: fileId2 }, data: { deletedAt: tenDaysAgo } });
+      await app.inject({ method: 'POST', url: '/admin/maintenance', headers: authHeaders(auth) });
+      expect(await prisma.fileObject.findUnique({ where: { id: fileId2 } })).not.toBeNull();
+    });
+
+    it('persists the retention choice via the account endpoint', async () => {
+      await createUser({ email: 'ret2@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 'ret2@test.local', 'correct-horse-battery');
+      const def = await app.inject({ method: 'GET', url: '/account/trash-retention', headers: { cookie: auth.cookie } });
+      expect(def.json().trashRetentionDays).toBe(7);
+      const set = await app.inject({ method: 'PATCH', url: '/account/trash-retention', headers: authHeaders(auth), payload: { trashRetentionDays: 30 } });
+      expect(set.statusCode).toBe(200);
+      expect(set.json().trashRetentionDays).toBe(30);
+      const bad = await app.inject({ method: 'PATCH', url: '/account/trash-retention', headers: authHeaders(auth), payload: { trashRetentionDays: -5 } });
+      expect(bad.statusCode).toBe(400);
+    });
+  });
+
+  describe('admin: empty a user\'s storage', () => {
+    it('wipes content (personal + owned spaces) but keeps the account', async () => {
+      await createUser({ email: 'adminw@test.local', password: 'correct-horse-battery', role: 'ADMIN' });
+      const adminAuth = await login(app, 'adminw@test.local', 'correct-horse-battery');
+      const target = await createUser({ email: 'victim@test.local', password: 'correct-horse-battery' });
+      const targetAuth = await login(app, 'victim@test.local', 'correct-horse-battery');
+
+      await uploadFile(app, '/files', targetAuth, 'a.txt', Buffer.from('personal file'));
+      const space = await app.inject({ method: 'POST', url: '/spaces', headers: authHeaders(targetAuth), payload: { name: 'Team' } });
+      const spaceId = space.json().space.id as string;
+      await uploadFile(app, `/spaces/${spaceId}/files`, targetAuth, 'b.txt', Buffer.from('space file'));
+      expect(Number((await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).usedBytes)).toBeGreaterThan(0);
+
+      const res = await app.inject({ method: 'POST', url: `/admin/users/${target.id}/purge-content`, headers: authHeaders(adminAuth) });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().filesDeleted).toBe(2);
+
+      // Account survives; storage is empty.
+      expect(await prisma.user.findUnique({ where: { id: target.id } })).not.toBeNull();
+      expect(await prisma.fileObject.count({ where: { ownerId: target.id } })).toBe(0);
+      expect(await prisma.folder.count({ where: { ownerId: target.id } })).toBe(0);
+      expect(await prisma.sharedSpace.count({ where: { ownerId: target.id } })).toBe(0);
+      expect(Number((await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).usedBytes)).toBe(0);
+      // The user can still log in.
+      const relog = await app.inject({ method: 'POST', url: '/auth/login', payload: { email: 'victim@test.local', password: 'correct-horse-battery' } });
+      expect(relog.statusCode).toBe(200);
+    });
+  });
+
   describe('admin maintenance', () => {
     it('reconciles a drifted usedBytes counter', async () => {
       const admin = await createUser({

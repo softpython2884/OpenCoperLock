@@ -55,6 +55,8 @@ import type { PublicFile, PublicFolder } from '@opencoperlock/shared/client';
 import { formatBytes } from '@opencoperlock/shared/client';
 import { api, API_URL, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useOffline } from '@/lib/offline';
+import { OfflineView } from '@/components/OfflineView';
 import { useT } from '@/lib/i18n';
 import {
   checkVerifier,
@@ -115,6 +117,7 @@ function passKey(spaceId: string) {
 
 export default function EspacesPage() {
   const { refresh } = useAuth();
+  const { online } = useOffline();
   const { t } = useT();
   const [allFolders, setAllFolders] = useState<PublicFolder[]>([]);
   const [activeSpaceId, setActiveSpaceId] = useState<string | null>(null);
@@ -239,6 +242,12 @@ export default function EspacesPage() {
   const loadFolders = useCallback(async () => {
     const res = await api.get<{ folders: PublicFolder[] }>('/folders');
     setAllFolders(res.folders);
+    // Cache the folder list so the offline view can offer a destination picker.
+    try {
+      localStorage.setItem('ocl_folders', JSON.stringify(res.folders));
+    } catch {
+      /* storage unavailable */
+    }
     return res.folders;
   }, []);
 
@@ -1295,6 +1304,11 @@ export default function EspacesPage() {
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
+
+  // Offline: swap the whole Drive for the minimal "queue an upload" view.
+  if (!online) {
+    return <OfflineView />;
+  }
 
   if (!activeSpaceId) {
     return (

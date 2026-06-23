@@ -26,8 +26,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const res = await me();
       setUser(res.user);
+      try {
+        localStorage.setItem('ocl_user', JSON.stringify(res.user));
+      } catch {
+        /* storage unavailable */
+      }
     } catch {
-      setUser(null);
+      // Offline: keep the last-known user so the app still loads (read-only / queue uploads).
+      let cached: PublicUser | null = null;
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        try {
+          const raw = localStorage.getItem('ocl_user');
+          if (raw) cached = JSON.parse(raw) as PublicUser;
+        } catch {
+          /* ignore */
+        }
+      }
+      setUser(cached);
     } finally {
       setLoading(false);
     }
@@ -40,11 +55,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (email: string, password: string, totp?: string) => {
     const res = await apiLogin(email, password, totp);
     setUser(res.user);
+    try {
+      localStorage.setItem('ocl_user', JSON.stringify(res.user));
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const logout = useCallback(async () => {
     await apiLogout();
     setUser(null);
+    try {
+      localStorage.removeItem('ocl_user');
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   return (

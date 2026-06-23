@@ -1,22 +1,22 @@
 /*
- * OpenCoperLock service worker — deliberately minimal.
+ * OpenCoperLock service worker — installable PWA + offline app shell.
  *
- * It exists to make the app installable and to serve an offline fallback for page
- * navigations. It NEVER caches API responses or file contents: those are private and
- * potentially large, and stale copies would be both confusing and a data-leak risk. Only
- * same-origin GET navigations get a cached app-shell fallback when the network is down.
+ * It NEVER caches API responses or file contents (private + potentially large; stale copies
+ * would leak or mislead). It caches only the app shell and Next.js static assets so the app can
+ * BOOT offline after it has been opened online at least once. Offline file uploads are queued in
+ * IndexedDB by the app itself and flushed on reconnect — not handled here.
  */
-const CACHE = 'ocl-shell-v1';
-const SHELL = '/';
+const SHELL = 'ocl-shell-v2';
+const STATIC = 'ocl-static-v2';
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.add(SHELL)).catch(() => {}));
+  event.waitUntil(caches.open(SHELL).then((c) => c.add('/')).catch(() => {}));
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))),
+    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== SHELL && k !== STATIC).map((k) => caches.delete(k)))),
   );
   self.clients.claim();
 });
@@ -24,19 +24,47 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
-
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // never touch the cross-origin API
 
-  // App-shell strategy for page navigations only.
+  const isStatic =
+    url.pathname.startsWith('/_next/static/') ||
+    url.pathname === '/icon.svg' ||
+    url.pathname === '/manifest.webmanifest';
+
+  // Content-hashed static assets: cache-first (safe forever), so the shell boots offline.
+  if (isStatic) {
+    event.respondWith(
+      caches.match(req).then(
+        (cached) =>
+          cached ||
+          fetch(req)
+            .then((res) => {
+              const copy = res.clone();
+              caches.open(STATIC).then((c) => c.put(req, copy)).catch(() => {});
+              return res;
+            })
+            .catch(() => cached),
+      ),
+    );
+    return;
+  }
+
+  // Page navigations: network-first, falling back to the cached page or the app shell.
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req)
         .then((res) => {
-          caches.open(CACHE).then((c) => c.put(SHELL, res.clone())).catch(() => {});
+          const copy = res.clone();
+          caches.open(SHELL).then((c) => c.put(req, copy)).catch(() => {});
           return res;
         })
-        .catch(() => caches.match(SHELL).then((r) => r || Response.error())),
+        .catch(() =>
+          caches
+            .match(req)
+            .then((r) => r || caches.match('/'))
+            .then((r) => r || Response.error()),
+        ),
     );
   }
 });

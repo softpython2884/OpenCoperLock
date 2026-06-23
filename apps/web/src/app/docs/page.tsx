@@ -383,6 +383,7 @@ curl -H "Authorization: Bearer ocl_…" -F "file=@backup.tgz" \\
           ul: [
             L('Interface adaptée au mobile ; installable comme application (PWA).', 'Mobile-friendly UI; installable as an app (PWA).'),
             L('Appui long pour sélectionner, glisser-déposer, et toutes les actions du menu.', 'Long-press to select, drag-and-drop, and all menu actions.'),
+            L('Mode hors-ligne : l’app s’ouvre sans réseau et propose d’envoyer des fichiers ; ils sont gardés sur l’appareil et synchronisés automatiquement au retour de la connexion.', 'Offline mode: the app opens with no network and lets you queue file uploads; they’re kept on the device and synced automatically when the connection returns.'),
             L('Le Quick-Upload est parfait pour envoyer depuis un téléphone sans se connecter.', 'Quick-Upload is perfect for sending from a phone without signing in.'),
           ],
         },

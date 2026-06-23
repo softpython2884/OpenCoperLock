@@ -9,6 +9,7 @@ import { useT } from '@/lib/i18n';
 import { Wordmark } from '@/components/Wordmark';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { StatusBanner } from '@/components/StatusBanner';
+import { OfflineBanner } from '@/components/OfflineBanner';
 import { formatBytes } from '@opencoperlock/shared/client';
 
 const NAV = [
@@ -166,6 +167,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Main */}
       <div className="md:ml-64">
+        <OfflineBanner />
         <StatusBanner />
         <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 md:px-8 md:py-8">{children}</main>
       </div>

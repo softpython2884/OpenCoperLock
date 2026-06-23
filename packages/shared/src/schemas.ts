@@ -181,6 +181,8 @@ export const updateSettingsSchema = z.object({
   globalStorageCapBytes: z.number().int().nonnegative().optional(),
   // Empty string clears the stored key (reverting to the .env value, if any).
   virustotalApiKey: z.string().max(200).optional(),
+  // Periodically check GitHub and apply a newer build automatically (needs self-update enabled).
+  autoUpdateEnabled: z.boolean().optional(),
 });
 export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
 

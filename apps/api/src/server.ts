@@ -17,6 +17,7 @@ import { quickRoutes } from './routes/quick.js';
 import { remoteRoutes } from './routes/remote.js';
 import { shareRoutes } from './routes/shares.js';
 import { spaceRoutes } from './routes/spaces.js';
+import { versionRoutes } from './routes/version.js';
 import { sharePublicRoutes } from './routes/share-public.js';
 import { twoFactorRoutes } from './routes/twofa.js';
 import { accountRoutes } from './routes/account.js';
@@ -97,6 +98,7 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
     await web.register(sharePublicRoutes, { prefix: '/s' });
     await web.register(twoFactorRoutes, { prefix: '/2fa' });
     await web.register(accountRoutes, { prefix: '/account' });
+    await web.register(versionRoutes, { prefix: '/version' });
     await web.register(adminRoutes, { prefix: '/admin' });
     await web.register(apiV1Routes, { prefix: '/api/v1' });
   });

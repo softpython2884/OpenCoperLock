@@ -7,6 +7,7 @@ import { createContext } from './context.js';
 import { buildServer } from './server.js';
 import { startRemoteWorker } from './worker/remote-worker.js';
 import { startMaintenance } from './services/maintenance.js';
+import { startAutoUpdate } from './services/autoUpdate.js';
 import { prisma } from './db.js';
 
 // Prefer IPv4 when resolving outbound hosts. Some self-hosted boxes advertise IPv6 but have
@@ -31,11 +32,13 @@ async function main(): Promise<void> {
   const app = await buildServer(ctx);
   const stopWorker = startRemoteWorker(ctx, app.log);
   const stopMaintenance = startMaintenance(ctx, app.log);
+  const stopAutoUpdate = startAutoUpdate(ctx, app.log);
 
   const shutdown = async (signal: string) => {
     app.log.info({ signal }, 'shutting down');
     stopWorker();
     stopMaintenance();
+    stopAutoUpdate();
     await app.close();
     await prisma.$disconnect();
     process.exit(0);

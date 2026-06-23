@@ -157,12 +157,16 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const { check } = req.query as { check?: string };
     const local = await getLocalVersion();
     const status = readUpdateStatus();
+    const setting = await prisma.setting
+      .findUnique({ where: { id: GLOBAL_SETTING_ID }, select: { autoUpdateEnabled: true } })
+      .catch(() => null);
     const base = {
       current: local,
       status,
       // True when a "running" status is actually stuck (so the UI can offer a relaunch).
       stuck: isUpdateStuck(status),
       selfUpdateEnabled: app.ctx.env.SELF_UPDATE_ENABLED,
+      autoUpdateEnabled: setting?.autoUpdateEnabled ?? false,
       repo: app.ctx.env.GITHUB_REPO,
       branch: app.ctx.env.UPDATE_BRANCH,
     };
@@ -205,9 +209,10 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     if (!body) return;
     // Build the update from only the provided fields, so the VT key and the cap can be saved
     // independently from their own forms.
-    const data: { globalStorageCapBytes?: bigint; virustotalApiKey?: string | null } = {};
+    const data: { globalStorageCapBytes?: bigint; virustotalApiKey?: string | null; autoUpdateEnabled?: boolean } = {};
     if (body.globalStorageCapBytes !== undefined) data.globalStorageCapBytes = BigInt(body.globalStorageCapBytes);
     if (body.virustotalApiKey !== undefined) data.virustotalApiKey = body.virustotalApiKey.trim() || null;
+    if (body.autoUpdateEnabled !== undefined) data.autoUpdateEnabled = body.autoUpdateEnabled;
 
     const setting = await prisma.setting.upsert({
       where: { id: GLOBAL_SETTING_ID },
@@ -223,6 +228,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     return {
       globalStorageCapBytes: Number(setting.globalStorageCapBytes),
       virustotalConfigured: app.ctx.virustotal.enabled,
+      autoUpdateEnabled: setting.autoUpdateEnabled,
     };
   });
 

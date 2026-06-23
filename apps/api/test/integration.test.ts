@@ -844,6 +844,34 @@ runIf('API integration', () => {
     });
   });
 
+  describe("what's new", () => {
+    it('stays silent on first contact, then shows release notes once per build', async () => {
+      const user = await createUser({ email: 'wn@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 'wn@test.local', 'correct-horse-battery');
+
+      // First load: nothing to show, and the current build is remembered silently.
+      const first = await app.inject({ method: 'GET', url: '/version/whats-new', headers: { cookie: auth.cookie } });
+      expect(first.statusCode).toBe(200);
+      expect(first.json().show).toBe(false);
+      const afterFirst = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+      // The test checkout is a git repo, so a build SHA was recorded.
+      expect(afterFirst.lastSeenVersion).toBeTruthy();
+
+      // Simulate having last seen an older build → notes appear (range falls back to recent commits).
+      await prisma.user.update({ where: { id: user.id }, data: { lastSeenVersion: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef' } });
+      const shown = await app.inject({ method: 'GET', url: '/version/whats-new', headers: { cookie: auth.cookie } });
+      expect(shown.json().show).toBe(true);
+      expect(typeof shown.json().notes).toBe('string');
+      expect(shown.json().notes.length).toBeGreaterThan(0);
+
+      // Dismissing records the current build, so it never shows again for this version.
+      const seen = await app.inject({ method: 'POST', url: '/version/whats-new/seen', headers: authHeaders(auth) });
+      expect(seen.statusCode).toBe(200);
+      const again = await app.inject({ method: 'GET', url: '/version/whats-new', headers: { cookie: auth.cookie } });
+      expect(again.json().show).toBe(false);
+    });
+  });
+
   describe('admin maintenance', () => {
     it('reconciles a drifted usedBytes counter', async () => {
       const admin = await createUser({

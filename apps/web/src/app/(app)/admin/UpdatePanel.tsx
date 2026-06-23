@@ -38,6 +38,7 @@ interface VersionInfo {
   status: UpdateStatus;
   stuck?: boolean;
   selfUpdateEnabled: boolean;
+  autoUpdateEnabled: boolean;
   repo: string;
   branch: string;
   checked: boolean;
@@ -99,6 +100,16 @@ export function UpdatePanel() {
     }
   }
 
+  async function toggleAuto() {
+    if (!info) return;
+    try {
+      await api.patch('/admin/settings', { autoUpdateEnabled: !info.autoUpdateEnabled });
+      await fetchVersion(false);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : String(e));
+    }
+  }
+
   async function runUpdate() {
     const ok = await confirm({
       title: t('admin.updateConfirmTitle'),
@@ -128,7 +139,7 @@ export function UpdatePanel() {
     );
   }
 
-  const { current, status, remote, updateAvailable, behindBy, selfUpdateEnabled } = info;
+  const { current, status, remote, updateAvailable, behindBy, selfUpdateEnabled, autoUpdateEnabled } = info;
   // A stuck "running" status (e.g. a previous update killed mid-flight) must not lock the panel.
   const stuck = !!info.stuck;
   const running = status.state === 'running' && !stuck;
@@ -238,6 +249,27 @@ export function UpdatePanel() {
             </p>
           )}
         </div>
+      )}
+
+      {/* Automatic updates */}
+      {selfUpdateEnabled && (
+        <button
+          type="button"
+          onClick={toggleAuto}
+          className="flex w-full items-center justify-between gap-3 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2.5 text-left transition hover:border-white/15"
+        >
+          <span className="min-w-0">
+            <span className="block text-sm text-zinc-200">{t('admin.autoUpdate')}</span>
+            <span className="block text-xs text-zinc-500">{t('admin.autoUpdateHint')}</span>
+          </span>
+          <span
+            className={`relative h-5 w-9 shrink-0 rounded-full transition ${autoUpdateEnabled ? 'bg-accent' : 'bg-white/15'}`}
+          >
+            <span
+              className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${autoUpdateEnabled ? 'left-[18px]' : 'left-0.5'}`}
+            />
+          </span>
+        </button>
       )}
 
       {error && <p className="text-sm text-red-300">{error}</p>}

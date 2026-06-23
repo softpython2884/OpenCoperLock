@@ -85,6 +85,78 @@ export async function getLocalVersion(): Promise<LocalVersion> {
   return cachedLocal;
 }
 
+// Trailer / footer lines we never want to show end users in the "What's new" notes.
+const NOISE_LINE = /^(Co-Authored-By|Claude-Session|Claude-[\w-]+|Signed-off-by|Reviewed-by):/i;
+
+/** Strip bookkeeping trailers and the generator footer from a commit body. */
+function cleanBody(body: string): string {
+  return body
+    .split('\n')
+    .filter((l) => !NOISE_LINE.test(l.trim()) && !/^🤖 Generated with/.test(l.trim()) && !/^https:\/\/claude\.ai/.test(l.trim()))
+    .join('\n')
+    .trim();
+}
+
+export interface Changelog {
+  /** Markdown ready to render in the "What's new" dialog. */
+  markdown: string;
+  /** Number of commits summarised (after capping). */
+  count: number;
+}
+
+// Beyond this many commits the notes get unwieldy; we summarise the newest and note the rest.
+const MAX_CHANGELOG_COMMITS = 40;
+
+/**
+ * Build human-readable release notes for the commits in `from..to` (newest first), as Markdown.
+ * Returns null when there is nothing to show or git can't produce a range (e.g. a force-push made
+ * `from` unreachable — the caller falls back to the most recent commits instead).
+ */
+export async function getChangelog(from: string, to: string): Promise<Changelog | null> {
+  if (!repoRoot || from === to) return null;
+  // %x1e separates commits, %x1f separates subject from body within a commit.
+  const fmt = '--format=%s%x1f%b%x1e';
+  let stdout: string;
+  try {
+    const res = await exec('git', ['log', fmt, `${from}..${to}`], { cwd: repoRoot, maxBuffer: 8 * 1024 * 1024 });
+    stdout = res.stdout;
+  } catch {
+    return null; // `from` not reachable — caller decides on a fallback
+  }
+  return renderChangelog(stdout);
+}
+
+/** The most recent `n` commits as Markdown — a fallback when the range can't be computed. */
+export async function getRecentChangelog(n: number): Promise<Changelog | null> {
+  if (!repoRoot) return null;
+  try {
+    const { stdout } = await exec('git', ['log', `-${n}`, '--format=%s%x1f%b%x1e'], { cwd: repoRoot, maxBuffer: 8 * 1024 * 1024 });
+    return renderChangelog(stdout);
+  } catch {
+    return null;
+  }
+}
+
+function renderChangelog(raw: string): Changelog | null {
+  const commits = raw
+    .split('\x1e')
+    .map((c) => c.trim())
+    .filter(Boolean)
+    .map((c) => {
+      const [subject, ...rest] = c.split('\x1f');
+      return { subject: (subject ?? '').trim(), body: cleanBody(rest.join('\x1f')) };
+    })
+    .filter((c) => c.subject);
+  if (commits.length === 0) return null;
+
+  const shown = commits.slice(0, MAX_CHANGELOG_COMMITS);
+  const blocks = shown.map((c) => (c.body ? `### ${c.subject}\n\n${c.body}` : `### ${c.subject}`));
+  if (commits.length > shown.length) {
+    blocks.push(`_…and ${commits.length - shown.length} more change(s)._`);
+  }
+  return { markdown: blocks.join('\n\n'), count: commits.length };
+}
+
 interface GithubCommit {
   sha: string;
   html_url: string;

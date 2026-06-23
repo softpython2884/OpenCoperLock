@@ -432,6 +432,8 @@ const fr: Dict = {
   'admin.updateRunning': 'Mise à jour en cours…',
   'admin.updateStuck': 'La mise à jour précédente semble bloquée. Vous pouvez la relancer.',
   'admin.updateRelaunch': 'Relancer la mise à jour',
+  'admin.autoUpdate': 'Mises à jour automatiques',
+  'admin.autoUpdateHint': 'Vérifie GitHub plusieurs fois par jour et applique automatiquement une nouvelle version.',
   'admin.updateSuccess': 'Dernière mise à jour réussie.',
   'admin.updateFailedPre': 'Échec :',
   'admin.updateFailedDefault': 'voir .update.log sur le serveur.',
@@ -522,6 +524,12 @@ const fr: Dict = {
   'nav.storage': 'Stockage',
   'role.admin': 'Administrateur',
   'role.user': 'Utilisateur',
+  // what's new
+  'whatsnew.title': 'Quoi de neuf',
+  'whatsnew.version': 'Version {version}',
+  'whatsnew.changes': '{count} changement(s)',
+  'whatsnew.gotIt': 'J’ai compris',
+  'whatsnew.dismiss': 'Fermer',
   // shared spaces
   'space.subtitle': 'Des dossiers collaboratifs partagés avec un groupe d’utilisateurs. Le stockage est à la charge du propriétaire.',
   'space.new': 'Nouvel espace',
@@ -1001,6 +1009,8 @@ const en: Dict = {
   'admin.updateRunning': 'Update in progress…',
   'admin.updateStuck': 'The previous update looks stuck. You can relaunch it.',
   'admin.updateRelaunch': 'Relaunch update',
+  'admin.autoUpdate': 'Automatic updates',
+  'admin.autoUpdateHint': 'Checks GitHub a few times a day and applies a newer build automatically.',
   'admin.updateSuccess': 'Last update succeeded.',
   'admin.updateFailedPre': 'Failed:',
   'admin.updateFailedDefault': 'see .update.log on the server.',
@@ -1087,6 +1097,12 @@ const en: Dict = {
   'nav.storage': 'Storage',
   'role.admin': 'Administrator',
   'role.user': 'User',
+  // what's new
+  'whatsnew.title': 'What’s new',
+  'whatsnew.version': 'Version {version}',
+  'whatsnew.changes': '{count} change(s)',
+  'whatsnew.gotIt': 'Got it',
+  'whatsnew.dismiss': 'Close',
   // shared spaces
   'space.subtitle': 'Collaborative folders shared with a group of users. The owner pays for the storage.',
   'space.new': 'New space',

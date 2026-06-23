@@ -38,7 +38,8 @@ the source.
   opt-in zero-knowledge vault whose contents are encrypted in the browser and never
   readable by the server.
 - **Administration** — create users, set per-user quotas, define the global cap, manage
-  Quick-Upload codes and read the audit log.
+  Quick-Upload codes and read the audit log. One-click (or **automatic**) self-update from
+  GitHub, with a "What's new" dialog that shows each user the release notes once per update.
 
 ## Architecture
 

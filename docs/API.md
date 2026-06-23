@@ -88,4 +88,51 @@ rclone copy ./photos ocl:Photos
 
 Notes: vault (Zero-Knowledge) folders are not exposed; `COPY` (drag-duplicate) isn't implemented
 yet (`MOVE`/rename works); locking is accepted but advisory.
+
+### Behind nginx
+
+The reverse proxy must pass WebDAV's custom methods, the `Authorization` header, and large
+uploads through to the API. If the API is exposed under `/api`, mount WebDAV there:
+
+```nginx
+# WebDAV needs custom verbs (PROPFIND, MKCOL, MOVE, LOCK…), auth passthrough and big bodies.
+location /api/ {
+    proxy_pass http://127.0.0.1:4000/;   # trailing slash strips /api → API sees /dav/
+    proxy_set_header Host              $host;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Authorization     $http_authorization;  # forward Basic creds
+    proxy_pass_request_headers on;
+    client_max_body_size 0;        # no upload size cap at the proxy
+    proxy_request_buffering off;   # stream PUT bodies straight through
+    proxy_buffering off;
+    proxy_read_timeout 3600s;
+}
+```
+
+The WebDAV URL is then `https://<host>/api/dav/` (exactly what the account page shows — copy it
+from there rather than typing it).
+
+### Diagnosing a mount that won't connect
+
+First prove the server side works, independent of any OS client:
+
+```bash
+curl -u "me:ocl_YOUR_TOKEN" -X PROPFIND -H "Depth: 1" https://<host>/api/dav/
+```
+
+- **207 Multi-Status with XML** → server + proxy are fine; the issue is the OS client (below).
+- **401 loop** → the token/Basic auth isn't reaching the API (check `Authorization` passthrough).
+- **404 / 405** → the path is wrong: the proxy isn't stripping `/api`, so the API never sees `/dav`.
+
+### Windows Explorer
+
+Windows' built-in WebDAV client is strict:
+
+- Use **HTTPS** (you do) and make sure the **WebClient** service is running (`services.msc`).
+- Windows often refuses Basic auth even over HTTPS until you set, in
+  `HKLM\SYSTEM\CurrentControlSet\Services\WebClient\Parameters`, the DWORD
+  **`BasicAuthLevel = 2`**, then restart the WebClient service.
+- If it still won't map, test with **rclone**, **Cyberduck** or **WinSCP** first — if those work,
+  it's a Windows-client limitation, not the server.
 </content>

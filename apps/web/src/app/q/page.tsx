@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { UploadCloud, CheckCircle2 } from 'lucide-react';
+import { UploadCloud, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { API_URL } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { Logo } from '@/components/Logo';
@@ -16,6 +16,7 @@ import { Wordmark } from '@/components/Wordmark';
 export default function QuickUploadPage() {
   const { t } = useT();
   const [code, setCode] = useState('');
+  const [showCode, setShowCode] = useState(false);
   const [password, setPassword] = useState('');
   const [requiresPassword, setRequiresPassword] = useState(false);
   const [validated, setValidated] = useState(false);
@@ -93,13 +94,26 @@ export default function QuickUploadPage() {
           <div className="card space-y-4">
             {!validated ? (
               <form onSubmit={check} className="space-y-3">
-                <input
-                  className="input text-center font-mono text-lg uppercase tracking-[0.3em]"
-                  placeholder={t('quick.codePlaceholder')}
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  required
-                />
+                <div className="relative">
+                  <input
+                    className="input text-center font-mono text-lg uppercase tracking-[0.3em]"
+                    type={showCode ? 'text' : 'password'}
+                    autoComplete="off"
+                    placeholder={t('quick.codePlaceholder')}
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.toUpperCase())}
+                    required
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowCode((s) => !s)}
+                    aria-label={t('quick.toggleCode')}
+                    className="absolute inset-y-0 right-2 grid place-items-center text-zinc-500 transition hover:text-zinc-300"
+                  >
+                    {showCode ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
                 <button className="btn-primary w-full">{t('quick.continue')}</button>
               </form>
             ) : (

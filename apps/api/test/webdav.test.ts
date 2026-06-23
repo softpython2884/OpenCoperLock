@@ -23,15 +23,23 @@ describe('webdav helpers', () => {
   });
 });
 
-// Building the app needs env (incl. DATABASE_URL); run these only where it's configured (CI).
-const routingDescribe = process.env.DATABASE_URL ? describe : describe.skip;
-routingDescribe('webdav routing', () => {
+// A boot smoke-test needs no real database (these routes reject before any query), so give
+// loadEnv a throwaway DATABASE_URL and always run it — this catches route-registration crashes
+// (e.g. a duplicated HEAD route) that would otherwise only surface as a 502 in production.
+process.env.DATABASE_URL ||= 'postgresql://x:x@localhost:5432/ocl_boot_check';
+
+describe('webdav routing (boot smoke-test)', () => {
   let app: FastifyInstance;
   beforeAll(async () => {
     app = await buildTestApp();
   });
   afterAll(async () => {
-    await app.close();
+    await app?.close();
+  });
+
+  it('boots: browser routes stay inside CORS and respond', async () => {
+    const res = await app.inject({ method: 'GET', url: '/health' });
+    expect(res.statusCode).toBe(200);
   });
 
   // No auth header → challenge BEFORE any DB access. Proves the custom methods are routed and

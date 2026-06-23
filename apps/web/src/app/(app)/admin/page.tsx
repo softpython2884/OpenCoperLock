@@ -7,6 +7,7 @@ import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useT } from '@/lib/i18n';
 import { confirm, prompt } from '@/components/ui/overlays';
+import { Select } from '@/components/ui/Select';
 import { UpdatePanel } from './UpdatePanel';
 
 interface Stats {
@@ -188,14 +189,15 @@ export default function AdminPage() {
             value={nu.password}
             onChange={(e) => setNu({ ...nu, password: e.target.value })}
           />
-          <select
-            className="input max-w-[8rem]"
+          <Select
+            className="w-[9rem]"
             value={nu.role}
-            onChange={(e) => setNu({ ...nu, role: e.target.value })}
-          >
-            <option value="USER">{t('admin.roleUser')}</option>
-            <option value="ADMIN">{t('admin.roleAdmin')}</option>
-          </select>
+            onChange={(v) => setNu({ ...nu, role: v })}
+            options={[
+              { value: 'USER', label: t('admin.roleUser') },
+              { value: 'ADMIN', label: t('admin.roleAdmin') },
+            ]}
+          />
           <button
             className="btn-primary"
             onClick={() =>

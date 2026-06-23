@@ -24,6 +24,26 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     return { files: files.map(toPublicFile) };
   });
 
+  // GET /files/search?q= — find the user's NORMAL files by name (vault files are encrypted and
+  // never searchable server-side). Powers the Ctrl/⌘+K palette's global file lookup.
+  app.get('/search', async (req) => {
+    const { q, limit } = req.query as { q?: string; limit?: string };
+    const term = (q ?? '').trim();
+    if (term.length < 1) return { files: [] };
+    const take = Math.min(Math.max(Number(limit) || 20, 1), 50);
+    const files = await prisma.fileObject.findMany({
+      where: {
+        ownerId: req.user!.id,
+        encMode: 'SERVER',
+        deletedAt: null,
+        name: { contains: term, mode: 'insensitive' },
+      },
+      orderBy: { name: 'asc' },
+      take,
+    });
+    return { files: files.map(toPublicFile) };
+  });
+
   // POST /files?folderId= — streaming, server-side-encrypted upload.
   app.post('/', async (req, reply) => {
     const { folderId } = req.query as { folderId?: string };

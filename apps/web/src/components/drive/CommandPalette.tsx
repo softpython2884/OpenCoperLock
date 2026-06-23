@@ -33,23 +33,53 @@ function fuzzyScore(query: string, text: string): number {
   return qi === q.length ? 100 - text.length : -1;
 }
 
-export function CommandPalette({ items, onClose }: { items: PaletteItem[]; onClose: () => void }) {
+export function CommandPalette({
+  items,
+  onClose,
+  onSearch,
+}: {
+  items: PaletteItem[];
+  onClose: () => void;
+  /** Optional async lookup (e.g. global file search) merged in as the user types. */
+  onSearch?: (query: string) => Promise<PaletteItem[]>;
+}) {
   const { t } = useT();
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
+  const [remote, setRemote] = useState<PaletteItem[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
 
   const results = useMemo(() => {
     if (!query.trim()) return items.slice(0, 12);
-    return items
+    const local = items
       .map((it) => ({ it, score: Math.max(fuzzyScore(query, it.label), it.sub ? fuzzyScore(query, it.sub) : -1) }))
       .filter((r) => r.score >= 0)
       .sort((a, b) => b.score - a.score)
-      .slice(0, 20)
       .map((r) => r.it);
-  }, [items, query]);
+    // Append async (server) results, skipping anything already shown.
+    const seen = new Set(local.map((it) => it.id));
+    return [...local, ...remote.filter((it) => !seen.has(it.id))].slice(0, 25);
+  }, [items, query, remote]);
 
   useEffect(() => setActive(0), [query]);
+
+  // Debounced async search (global file lookup).
+  useEffect(() => {
+    if (!onSearch || !query.trim()) {
+      setRemote([]);
+      return;
+    }
+    let cancelled = false;
+    const handle = setTimeout(() => {
+      void onSearch(query).then((r) => {
+        if (!cancelled) setRemote(r);
+      });
+    }, 180);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [query, onSearch]);
 
   function onKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'ArrowDown') {

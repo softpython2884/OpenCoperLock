@@ -1116,12 +1116,12 @@ export default function EspacesPage() {
       pressSelect(e.key);
       return;
     }
+    // Right-click on something inside a multi-selection → bulk menu; otherwise act on the
+    // clicked entry WITHOUT changing the current selection (the menu targets it directly).
     if (selected.has(e.key) && selected.size > 1) {
       openCtx(ev, bulkMenuItems());
       return;
     }
-    setSelected(new Set([e.key]));
-    setAnchorKey(e.key);
     openCtx(ev, entryMenuItems(e));
   }
 
@@ -1236,19 +1236,43 @@ export default function EspacesPage() {
   }
   paletteItems.push({ id: 'cmd-help', kind: 'command', label: t('drive.cmdHelp'), icon: Keyboard, run: () => { close(); setHelpOpen(true); } });
   if (activeSpaceId) paletteItems.push({ id: 'cmd-spaces', kind: 'command', label: t('drive.cmdGoSpaces'), icon: Home, run: () => { close(); leaveSpace(); } });
+  // Zero-Knowledge spaces/folders and their files are intentionally excluded: their names are
+  // encrypted and opening them needs the vault passphrase, so the palette never points into them.
   for (const f of allFolders) {
+    if (f.isZeroKnowledge) continue;
     paletteItems.push({
       id: `f-${f.id}`,
       kind: 'folder',
       label: f.name,
-      sub: f.parentId === null ? (f.isZeroKnowledge ? t('drive.secured') : t('drive.normalSpace')) : undefined,
-      icon: f.isZeroKnowledge ? FolderLock : Folder,
+      sub: f.parentId === null ? t('drive.normalSpace') : undefined,
+      icon: Folder,
       run: () => { close(); jumpToFolder(f); },
     });
   }
-  for (const e of entries) {
-    if (e.kind === 'file') paletteItems.push({ id: `x-${e.file.id}`, kind: 'file', label: e.file.name, icon: fileVisual(e.file.name, e.file.mimeType).Icon, run: () => { close(); openFile(e.file); } });
-    else if (e.kind === 'zk') paletteItems.push({ id: `x-${e.zk.id}`, kind: 'file', label: e.name, icon: Lock, run: () => { close(); void openZk(e.zk); } });
+  if (!isZk) {
+    for (const e of entries) {
+      if (e.kind === 'file') paletteItems.push({ id: `x-${e.file.id}`, kind: 'file', label: e.file.name, icon: fileVisual(e.file.name, e.file.mimeType).Icon, run: () => { close(); openFile(e.file); } });
+    }
+  }
+
+  // Global file lookup for the palette — normal (non-vault) files only, across the account.
+  async function searchFiles(query: string): Promise<PaletteItem[]> {
+    try {
+      const res = await api.get<{ files: PublicFile[] }>(`/files/search?q=${encodeURIComponent(query)}`);
+      return res.files.map((f) => ({
+        id: `search-${f.id}`,
+        kind: 'file' as const,
+        label: f.name,
+        sub: t('drive.searchInFiles'),
+        icon: fileVisual(f.name, f.mimeType).Icon,
+        run: () => {
+          setPaletteOpen(false);
+          openFile(f);
+        },
+      }));
+    } catch {
+      return [];
+    }
   }
 
   function toggleSort(key: SortKey) {
@@ -1310,7 +1334,7 @@ export default function EspacesPage() {
             ))}
           </div>
         )}
-        {paletteOpen && <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} />}
+        {paletteOpen && <CommandPalette items={paletteItems} onSearch={searchFiles} onClose={() => setPaletteOpen(false)} />}
         {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
         {viewing && <FileViewer source={viewing} onClose={() => setViewing(null)} />}
       </div>
@@ -1529,7 +1553,7 @@ export default function EspacesPage() {
           onRestored={reloadCurrent}
         />
       )}
-      {paletteOpen && <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} />}
+      {paletteOpen && <CommandPalette items={paletteItems} onSearch={searchFiles} onClose={() => setPaletteOpen(false)} />}
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
       {viewing && <FileViewer source={viewing} onClose={() => setViewing(null)} />}
       {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxMenu.items} onClose={() => setCtxMenu(null)} />}

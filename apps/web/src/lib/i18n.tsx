@@ -216,6 +216,7 @@ const fr: Dict = {
   'drive.sortBy': 'Trier',
   // command palette
   'drive.searchPlaceholder': 'Rechercher un fichier, un dossier, une action…',
+  'drive.searchInFiles': 'dans vos fichiers',
   'drive.noResults': 'Aucun résultat',
   'drive.cmdNewFolder': 'Nouveau dossier',
   'drive.cmdNewFile': 'Nouveau fichier',
@@ -698,6 +699,7 @@ const en: Dict = {
   'drive.sortBy': 'Sort',
   // command palette
   'drive.searchPlaceholder': 'Search a file, a folder, an action…',
+  'drive.searchInFiles': 'in your files',
   'drive.noResults': 'No results',
   'drive.cmdNewFolder': 'New folder',
   'drive.cmdNewFile': 'New file',

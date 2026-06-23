@@ -11,6 +11,7 @@ import { api, API_URL, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { useT } from '@/lib/i18n';
 import { prompt, toast } from '@/components/ui/overlays';
+import { Select } from '@/components/ui/Select';
 
 interface TwoFaStatus {
   enabled: boolean;
@@ -74,6 +75,9 @@ export default function AccountPage() {
   useEffect(() => {
     void load().catch((e) => setError(String(e)));
   }, [load]);
+
+  // Normal (non-vault) folders as dropdown options — vaults can't be API/quick/webhook targets.
+  const folderOptions = folders.filter((f) => !f.isZeroKnowledge).map((f) => ({ value: f.id, label: f.name }));
 
   async function wrap(fn: () => Promise<unknown>) {
     setError(null);
@@ -257,20 +261,12 @@ export default function AccountPage() {
             value={nc.code}
             onChange={(e) => setNc({ ...nc, code: e.target.value.toUpperCase() })}
           />
-          <select
-            className="input max-w-[14rem]"
+          <Select
+            className="w-[14rem]"
             value={nc.targetFolderId}
-            onChange={(e) => setNc({ ...nc, targetFolderId: e.target.value })}
-          >
-            <option value="">{t('account.quickCodeDefaultFolder')}</option>
-            {folders
-              .filter((f) => !f.isZeroKnowledge)
-              .map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-          </select>
+            onChange={(v) => setNc({ ...nc, targetFolderId: v })}
+            options={[{ value: '', label: t('account.quickCodeDefaultFolder') }, ...folderOptions]}
+          />
           <input
             className="input max-w-[9rem]"
             type="number"
@@ -343,16 +339,12 @@ export default function AccountPage() {
             value={nw.secret}
             onChange={(e) => setNw({ ...nw, secret: e.target.value })}
           />
-          <select className="input max-w-[13rem]" value={nw.folderId} onChange={(e) => setNw({ ...nw, folderId: e.target.value })}>
-            <option value="">{t('account.webhookAnyFolder')}</option>
-            {folders
-              .filter((f) => !f.isZeroKnowledge)
-              .map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-          </select>
+          <Select
+            className="w-[13rem]"
+            value={nw.folderId}
+            onChange={(v) => setNw({ ...nw, folderId: v })}
+            options={[{ value: '', label: t('account.webhookAnyFolder') }, ...folderOptions]}
+          />
           <button
             className="btn-primary"
             disabled={!nw.url.trim()}
@@ -430,29 +422,22 @@ export default function AccountPage() {
             value={nt.name}
             onChange={(e) => setNt({ ...nt, name: e.target.value })}
           />
-          <select
-            className="input max-w-[11rem]"
+          <Select
+            className="w-[12rem]"
             value={nt.scopes.join(',')}
-            onChange={(e) => setNt({ ...nt, scopes: e.target.value.split(',') as ('read' | 'write')[] })}
-          >
-            <option value="write">{t('account.apiScopeWrite')}</option>
-            <option value="read">{t('account.apiScopeRead')}</option>
-            <option value="read,write">{t('account.apiScopeBoth')}</option>
-          </select>
-          <select
-            className="input max-w-[13rem]"
+            onChange={(v) => setNt({ ...nt, scopes: v.split(',') as ('read' | 'write')[] })}
+            options={[
+              { value: 'write', label: t('account.apiScopeWrite') },
+              { value: 'read', label: t('account.apiScopeRead') },
+              { value: 'read,write', label: t('account.apiScopeBoth') },
+            ]}
+          />
+          <Select
+            className="w-[13rem]"
             value={nt.folderId}
-            onChange={(e) => setNt({ ...nt, folderId: e.target.value })}
-          >
-            <option value="">{t('account.apiTokenAnyFolder')}</option>
-            {folders
-              .filter((f) => !f.isZeroKnowledge)
-              .map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-          </select>
+            onChange={(v) => setNt({ ...nt, folderId: v })}
+            options={[{ value: '', label: t('account.apiTokenAnyFolder') }, ...folderOptions]}
+          />
           <input
             className="input max-w-[8rem]"
             type="number"

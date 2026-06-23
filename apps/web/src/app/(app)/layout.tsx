@@ -10,6 +10,7 @@ import { Wordmark } from '@/components/Wordmark';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { StatusBanner } from '@/components/StatusBanner';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { DownloadIndicator } from '@/components/DownloadIndicator';
 import { formatBytes } from '@opencoperlock/shared/client';
 
 const NAV = [
@@ -170,6 +171,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <StatusBanner />
         <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 md:px-8 md:py-8">{children}</main>
       </div>
+      <DownloadIndicator />
     </div>
   );
 }

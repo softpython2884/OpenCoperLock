@@ -17,6 +17,7 @@ import {
   commitsBehind,
   getLocalVersion,
   getRemoteVersion,
+  isUpdateStuck,
   readUpdateStatus,
   startUpdate,
 } from '../services/version.js';
@@ -159,6 +160,8 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
     const base = {
       current: local,
       status,
+      // True when a "running" status is actually stuck (so the UI can offer a relaunch).
+      stuck: isUpdateStuck(status),
       selfUpdateEnabled: app.ctx.env.SELF_UPDATE_ENABLED,
       repo: app.ctx.env.GITHUB_REPO,
       branch: app.ctx.env.UPDATE_BRANCH,

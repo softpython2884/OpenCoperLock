@@ -36,6 +36,7 @@ interface UpdateStatus {
 interface VersionInfo {
   current: LocalVersion;
   status: UpdateStatus;
+  stuck?: boolean;
   selfUpdateEnabled: boolean;
   repo: string;
   branch: string;
@@ -126,7 +127,9 @@ export function UpdatePanel() {
   }
 
   const { current, status, remote, updateAvailable, behindBy, selfUpdateEnabled } = info;
-  const running = status.state === 'running';
+  // A stuck "running" status (e.g. a previous update killed mid-flight) must not lock the panel.
+  const stuck = !!info.stuck;
+  const running = status.state === 'running' && !stuck;
 
   return (
     <section className="card space-y-4">
@@ -169,6 +172,18 @@ export function UpdatePanel() {
       {running && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-sm text-amber-200">
           <Loader2 size={15} className="animate-spin" /> {status.message ?? t('admin.updateRunning')}
+        </div>
+      )}
+      {stuck && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-sm text-red-200">
+          <span className="flex items-center gap-2">
+            <AlertTriangle size={15} /> {t('admin.updateStuck')}
+          </span>
+          {selfUpdateEnabled && (
+            <button className="btn-primary ml-auto px-2.5 py-1 text-xs" onClick={runUpdate} disabled={busy !== null}>
+              <Download size={14} /> {t('admin.updateRelaunch')}
+            </button>
+          )}
         </div>
       )}
       {!running && status.state === 'success' && (

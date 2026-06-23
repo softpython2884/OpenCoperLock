@@ -111,6 +111,46 @@ body {
   color: #fff;
 }
 
+/* "Download started" cue — rises from the bottom-left and fades. */
+@keyframes ocl-dl-fly {
+  0% {
+    transform: translateY(18px);
+    opacity: 0;
+  }
+  14% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  68% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-72px);
+    opacity: 0;
+  }
+}
+.ocl-dl {
+  animation: ocl-dl-fly 1.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes ocl-dl-arrow {
+  0%,
+  100% {
+    transform: translateY(-1px);
+  }
+  50% {
+    transform: translateY(3px);
+  }
+}
+.ocl-dl-arrow {
+  animation: ocl-dl-arrow 0.55s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ocl-dl,
+  .ocl-dl-arrow {
+    animation-duration: 0.01ms;
+  }
+}
+
 @layer components {
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-50;

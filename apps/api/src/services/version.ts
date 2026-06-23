@@ -162,11 +162,24 @@ export interface StartUpdateResult {
   error?: string;
 }
 
+// A real update never takes this long; a "running" status older than this is stuck (e.g. an old
+// build that was killed before the reparent fix) and must not lock out future updates forever.
+const STALE_RUNNING_MS = 10 * 60 * 1000;
+
+/** True when the status is "running" but so old it's clearly stuck, not actually in progress. */
+export function isUpdateStuck(status: UpdateStatus): boolean {
+  return status.state === 'running' && status.startedAt !== null && Date.now() - Date.parse(status.startedAt) > STALE_RUNNING_MS;
+}
+
 /** Spawn the detached self-update script. It survives the PM2 reload it triggers. */
 export function startUpdate(env: Env): StartUpdateResult {
   if (!env.SELF_UPDATE_ENABLED) return { ok: false, error: 'Self-update is disabled on this instance.' };
   if (!repoRoot) return { ok: false, error: 'This deployment is not a git checkout; update it manually.' };
-  if (readUpdateStatus().state === 'running') return { ok: false, error: 'An update is already running.' };
+  const current = readUpdateStatus();
+  // A genuinely in-progress update blocks a second one; a stuck/stale one does not.
+  if (current.state === 'running' && !isUpdateStuck(current)) {
+    return { ok: false, error: 'An update is already running.' };
+  }
 
   const script = join(repoRoot, 'scripts', 'self-update.sh');
   if (!existsSync(script)) return { ok: false, error: 'Update script not found (scripts/self-update.sh).' };

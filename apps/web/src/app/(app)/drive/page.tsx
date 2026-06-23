@@ -68,6 +68,7 @@ import {
   randomSalt,
 } from '@/lib/zk';
 import { fileVisual } from '@/lib/fileType';
+import { signalDownload } from '@/lib/downloadFx';
 import { FileViewer, type ViewerSource } from '@/components/FileViewer';
 import { confirm, prompt, choose, toast } from '@/components/ui/overlays';
 import { DropOverlay } from '@/components/drive/DropOverlay';
@@ -149,11 +150,13 @@ export default function EspacesPage() {
   const [passInput, setPassInput] = useState('');
   const [passError, setPassError] = useState<string | null>(null);
 
-  // Restore persisted view/sort once on mount.
+  // Restore persisted view/sort once on mount. With no saved choice, default by screen size:
+  // mosaic (grid) on small screens, list on large ones.
   useEffect(() => {
     try {
       const v = localStorage.getItem('ocl_view');
       if (v === 'grid' || v === 'list') setView(v);
+      else setView(window.matchMedia('(max-width: 640px)').matches ? 'grid' : 'list');
       const s = localStorage.getItem('ocl_sort');
       if (s) {
         const parsed = JSON.parse(s) as Sort;
@@ -565,6 +568,7 @@ export default function EspacesPage() {
     a.download = name;
     a.click();
     URL.revokeObjectURL(url);
+    signalDownload(name);
   }
 
   function zkName(f: ZkFile) {
@@ -701,6 +705,21 @@ export default function EspacesPage() {
     if (pointerType.current === 'touch' && selected.size > 0) return;
     if (e.metaKey || e.ctrlKey || e.shiftKey) return; // let the row handle selection
     e.stopPropagation();
+    openEntry(entry);
+  }
+  // Grid/mosaic cards have no separate name target, so a plain click OPENS (like clicking the
+  // name in list view); modifiers select, long-press / tap-in-selection toggles.
+  function onCardClick(e: React.MouseEvent, entry: Entry) {
+    if (Date.now() - pressHandledAt.current < 700) return; // click synthesized after a long-press
+    if (pointerType.current === 'touch' && selected.size > 0) {
+      toggleKey(entry.key);
+      setAnchorKey(entry.key);
+      return;
+    }
+    if (e.metaKey || e.ctrlKey || e.shiftKey) {
+      onEntryClick(e, entry);
+      return;
+    }
     openEntry(entry);
   }
   function selectAll() {
@@ -857,6 +876,7 @@ export default function EspacesPage() {
       a.href = api.url(`/files/${it.file.id}/download`);
       a.download = it.file.name;
       a.click();
+      signalDownload(it.file.name);
     } else if (it.kind === 'zk') {
       const blob = await decryptZkBlob(it.zk);
       if (blob) saveBlob(blob, zkName(it.zk));
@@ -1450,7 +1470,7 @@ export default function EspacesPage() {
               iconNode={cardIcon(e, isZk)}
               name={e.name}
               sub={e.kind === 'folder' ? undefined : formatBytes(e.size)}
-              onClick={(ev) => onEntryClick(ev, e)}
+              onClick={(ev) => onCardClick(ev, e)}
               onDoubleClick={() => openEntry(e)}
               onContextMenu={(ev) => onEntryContext(ev, e)}
               press={pressProps(e)}
@@ -1495,7 +1515,7 @@ export default function EspacesPage() {
                 ) : e.kind === 'file' ? (
                   <>
                     <IconBtn title={t('drive.open')} icon={Eye} onClick={() => openFile(e.file)} />
-                    <a className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100" title={t('drive.actionDownload')} href={api.url(`/files/${e.file.id}/download`)}>
+                    <a className="rounded-lg p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100" title={t('drive.actionDownload')} href={api.url(`/files/${e.file.id}/download`)} onClick={() => signalDownload(e.file.name)}>
                       <Download size={16} />
                     </a>
                     <Menu items={fileMenuItems(e.file)} />

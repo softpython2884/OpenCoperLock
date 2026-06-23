@@ -6,12 +6,13 @@ import { toPublicFolder } from '../lib/serialize.js';
 import { trashFolder } from '../services/trash.js';
 import { audit } from '../services/audit.js';
 
-/** Collect a folder's id plus all descendant ids (breadth-first), scoped to one owner. */
+/** Collect a folder's id plus all descendant ids (breadth-first), scoped to one owner's personal
+ *  Drive (Shared-Space folders carry a spaceId and are handled by the /spaces routes). */
 async function collectSubtree(rootId: string, ownerId: string): Promise<string[]> {
   const ids = [rootId];
   for (let i = 0; i < ids.length; i += 1) {
     const children = await prisma.folder.findMany({
-      where: { parentId: ids[i], ownerId },
+      where: { parentId: ids[i], ownerId, spaceId: null },
       select: { id: true },
     });
     ids.push(...children.map((c) => c.id));
@@ -25,7 +26,7 @@ export const folderRoutes: FastifyPluginAsync = async (app) => {
   // GET /folders — flat list of the user's folders (the SPA assembles the tree).
   app.get('/', async (req) => {
     const folders = await prisma.folder.findMany({
-      where: { ownerId: req.user!.id, deletedAt: null },
+      where: { ownerId: req.user!.id, spaceId: null, deletedAt: null },
       orderBy: { name: 'asc' },
     });
     return { folders: folders.map(toPublicFolder) };
@@ -38,7 +39,7 @@ export const folderRoutes: FastifyPluginAsync = async (app) => {
 
     if (body.parentId) {
       const parent = await prisma.folder.findFirst({
-        where: { id: body.parentId, ownerId: req.user!.id },
+        where: { id: body.parentId, ownerId: req.user!.id, spaceId: null },
       });
       if (!parent) return reply.code(404).send({ error: 'Parent folder not found' });
     }
@@ -71,13 +72,13 @@ export const folderRoutes: FastifyPluginAsync = async (app) => {
     const body = parseOr400(reply, updateFolderSchema, req.body);
     if (!body) return;
 
-    const folder = await prisma.folder.findFirst({ where: { id, ownerId: req.user!.id } });
+    const folder = await prisma.folder.findFirst({ where: { id, ownerId: req.user!.id, spaceId: null } });
     if (!folder) return reply.code(404).send({ error: 'Folder not found' });
 
     if (body.parentId !== undefined && body.parentId !== null) {
       if (body.parentId === id) return reply.code(400).send({ error: 'A folder cannot contain itself' });
       const target = await prisma.folder.findFirst({
-        where: { id: body.parentId, ownerId: req.user!.id },
+        where: { id: body.parentId, ownerId: req.user!.id, spaceId: null },
       });
       if (!target) return reply.code(404).send({ error: 'Target folder not found' });
       // Reject moving a folder into one of its own descendants.

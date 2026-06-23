@@ -4,7 +4,7 @@
  * sides never drift.
  */
 import { z } from 'zod';
-import { ENC_MODES, ROLES, SHARE_ACCESS_MODES, SHARE_VIEW_TYPES } from './constants.js';
+import { ENC_MODES, ROLES, SHARE_ACCESS_MODES, SHARE_VIEW_TYPES, SPACE_ROLES } from './constants.js';
 
 // ── Primitives ───────────────────────────────────────────────────────────────
 
@@ -209,6 +209,40 @@ export const createShareSchema = z
     message: 'A code of at least 4 characters is required for code-protected shares',
   });
 export type CreateShareInput = z.infer<typeof createShareSchema>;
+
+// ── Shared Spaces ────────────────────────────────────────────────────────────
+
+/** A space name follows the same rules as a folder name (no separators / control chars). */
+export const createSpaceSchema = z.object({
+  name: folderNameSchema,
+});
+export type CreateSpaceInput = z.infer<typeof createSpaceSchema>;
+
+export const updateSpaceSchema = z.object({
+  name: folderNameSchema,
+});
+export type UpdateSpaceInput = z.infer<typeof updateSpaceSchema>;
+
+/** Add an existing instance user to a space, by email, with a role. */
+export const addSpaceMemberSchema = z.object({
+  email: emailSchema,
+  role: z.enum(SPACE_ROLES).default('VIEWER'),
+});
+export type AddSpaceMemberInput = z.infer<typeof addSpaceMemberSchema>;
+
+export const updateSpaceMemberSchema = z.object({
+  role: z.enum(SPACE_ROLES),
+});
+export type UpdateSpaceMemberInput = z.infer<typeof updateSpaceMemberSchema>;
+
+/**
+ * What happens to a space's content when its owner deletes it:
+ *  - 'delete'   permanently removes the space and everything in it (frees the owner's quota),
+ *  - 'transfer' hands the space (and its storage cost) to the earliest-joined member.
+ */
+export const DELETE_SPACE_MODES = ['delete', 'transfer'] as const;
+export const deleteSpaceModeSchema = z.enum(DELETE_SPACE_MODES);
+export type DeleteSpaceMode = (typeof DELETE_SPACE_MODES)[number];
 
 // ── Zero-Knowledge vault ─────────────────────────────────────────────────────
 

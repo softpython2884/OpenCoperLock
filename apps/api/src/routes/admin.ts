@@ -238,7 +238,7 @@ export const adminRoutes: FastifyPluginAsync = async (app) => {
 
     if (body.targetFolderId) {
       const folder = await prisma.folder.findFirst({
-        where: { id: body.targetFolderId, ownerId: req.user!.id },
+        where: { id: body.targetFolderId, ownerId: req.user!.id, spaceId: null },
       });
       if (!folder) return reply.code(404).send({ error: 'Target folder not found' });
       if (folder.isZeroKnowledge) {

@@ -21,10 +21,18 @@ export function isVersionable(name: string, mime: string): boolean {
   return VERSIONABLE_EXTENSIONS.has(ext);
 }
 
-/** The most recent SERVER file with this name in this folder, or null. */
-export function findVersionTarget(ownerId: string, folderId: string | null, name: string) {
+/**
+ * The most recent SERVER file with this name in this folder, or null. `spaceId` keeps personal
+ * and Shared-Space content separate even when they share an owner and a null folderId (root).
+ */
+export function findVersionTarget(
+  ownerId: string,
+  folderId: string | null,
+  name: string,
+  spaceId: string | null = null,
+) {
   return prisma.fileObject.findFirst({
-    where: { ownerId, folderId, name, encMode: 'SERVER' },
+    where: { ownerId, folderId, name, encMode: 'SERVER', spaceId },
     orderBy: { createdAt: 'desc' },
   });
 }

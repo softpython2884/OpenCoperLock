@@ -45,6 +45,13 @@ enum ShareAccess {
   AUTHENTICATED
 }
 
+// Role of a member inside a Shared Space. The space OWNER is not a member row — ownership
+// lives on SharedSpace.ownerId. EDITOR can upload/rename/delete; VIEWER is read-only.
+enum SpaceRole {
+  EDITOR
+  VIEWER
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -75,8 +82,44 @@ model User {
   recoveryCodes   RecoveryCode[]
   apiTokens       ApiToken[]
   webhooks        Webhook[]
+  ownedSpaces       SharedSpace[]       @relation("SpaceOwner")
+  spaceMemberships  SharedSpaceMember[]
 
   @@index([email])
+}
+
+// A Shared Space: a collaborative area whose folders & files are server-side encrypted (never
+// Zero-Knowledge) and reachable by a group of users. Exactly one OWNER (User) pays for the
+// storage of everything inside — every Folder/FileObject in the space carries ownerId = the
+// space owner, so the existing per-user quota accounting charges the owner automatically.
+// Access for everyone else is granted through SharedSpaceMember rows checked by a single
+// authorization helper; the personal Drive's `ownerId === me` filter never applies here.
+model SharedSpace {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String
+  owner     User     @relation("SpaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  members SharedSpaceMember[]
+  folders Folder[]
+  files   FileObject[]
+
+  @@index([ownerId])
+}
+
+model SharedSpaceMember {
+  id       String      @id @default(cuid())
+  spaceId  String
+  space    SharedSpace @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     SpaceRole   @default(VIEWER)
+  joinedAt DateTime    @default(now())
+
+  @@unique([spaceId, userId])
+  @@index([spaceId])
+  @@index([userId])
 }
 
 // One-time 2FA recovery codes, stored as SHA-256 hashes.
@@ -114,6 +157,10 @@ model Folder {
   parentId        String?
   parent          Folder?  @relation("FolderChildren", fields: [parentId], references: [id], onDelete: Cascade)
   children        Folder[] @relation("FolderChildren")
+  // When set, this folder lives inside a Shared Space (and is reachable only through the
+  // /spaces routes, never the personal Drive). null = a normal personal folder.
+  spaceId         String?
+  space           SharedSpace? @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   name            String
   isZeroKnowledge Boolean  @default(false)
   // Per-vault random salt for the client's PBKDF2 key derivation (ZK folders only).
@@ -133,6 +180,7 @@ model Folder {
 
   @@unique([ownerId, parentId, name])
   @@index([ownerId])
+  @@index([spaceId])
   @@index([deletedAt])
 }
 
@@ -142,6 +190,10 @@ model FileObject {
   owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   folderId  String?
   folder    Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  // Mirrors the owning folder's `spaceId`: set when the file lives in a Shared Space. null =
+  // a normal personal file. ownerId stays the space owner so the file counts against their quota.
+  spaceId   String?
+  space     SharedSpace? @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   name      String
   sizeBytes BigInt
   mimeType  String   @default("application/octet-stream")
@@ -177,6 +229,7 @@ model FileObject {
 
   @@index([ownerId])
   @@index([folderId])
+  @@index([spaceId])
   @@index([deletedAt])
 }
 

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { FolderLock, Share2, Globe, Settings, ShieldCheck, LogOut, Menu, X, Trash2 } from 'lucide-react';
+import { FolderLock, Users, Share2, Globe, Settings, ShieldCheck, LogOut, Menu, X, Trash2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useT } from '@/lib/i18n';
 import { Wordmark } from '@/components/Wordmark';
@@ -15,6 +15,7 @@ import { formatBytes } from '@opencoperlock/shared/client';
 
 const NAV = [
   { href: '/drive', labelKey: 'nav.spaces', icon: FolderLock },
+  { href: '/spaces', labelKey: 'nav.sharedSpaces', icon: Users },
   { href: '/shares', labelKey: 'nav.shares', icon: Share2 },
   { href: '/remote', labelKey: 'nav.remote', icon: Globe },
   { href: '/trash', labelKey: 'nav.trash', icon: Trash2 },

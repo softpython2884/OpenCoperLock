@@ -53,7 +53,7 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
 
     if (body.targetFolderId) {
       const folder = await prisma.folder.findFirst({
-        where: { id: body.targetFolderId, ownerId: req.user!.id },
+        where: { id: body.targetFolderId, ownerId: req.user!.id, spaceId: null },
       });
       if (!folder) return reply.code(404).send({ error: 'Target folder not found' });
       if (folder.isZeroKnowledge) {
@@ -117,7 +117,7 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
       throw err;
     }
     if (body.folderId) {
-      const folder = await prisma.folder.findFirst({ where: { id: body.folderId, ownerId: req.user!.id } });
+      const folder = await prisma.folder.findFirst({ where: { id: body.folderId, ownerId: req.user!.id, spaceId: null } });
       if (!folder) return reply.code(404).send({ error: 'Folder not found' });
     }
     const hook = await prisma.webhook.create({
@@ -164,7 +164,7 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
     if (!body) return;
 
     if (body.folderId) {
-      const folder = await prisma.folder.findFirst({ where: { id: body.folderId, ownerId: req.user!.id } });
+      const folder = await prisma.folder.findFirst({ where: { id: body.folderId, ownerId: req.user!.id, spaceId: null } });
       if (!folder) return reply.code(404).send({ error: 'Folder not found' });
       if (folder.isZeroKnowledge) return reply.code(400).send({ error: 'A vault cannot be an API target' });
     }
@@ -240,8 +240,8 @@ export const accountRoutes: FastifyPluginAsync = async (app) => {
     const userId = req.user!.id;
     const [user, folders, files, shares, sessions, logs] = await Promise.all([
       prisma.user.findUniqueOrThrow({ where: { id: userId } }),
-      prisma.folder.findMany({ where: { ownerId: userId } }),
-      prisma.fileObject.findMany({ where: { ownerId: userId } }),
+      prisma.folder.findMany({ where: { ownerId: userId, spaceId: null } }),
+      prisma.fileObject.findMany({ where: { ownerId: userId, spaceId: null } }),
       prisma.shareLink.findMany({ where: { ownerId: userId } }),
       prisma.session.findMany({
         where: { userId },

@@ -70,16 +70,16 @@ async function resolvePath(ownerId: string, segments: string[]): Promise<Resolve
   let parentId: string | null = null;
   for (let i = 0; i < segments.length - 1; i += 1) {
     const folder: Folder | null = await prisma.folder.findFirst({
-      where: { ownerId, parentId, name: segments[i], isZeroKnowledge: false },
+      where: { ownerId, parentId, name: segments[i], isZeroKnowledge: false, spaceId: null },
     });
     if (!folder) return { type: 'invalid' };
     parentId = folder.id;
   }
   const last = segments[segments.length - 1]!;
-  const folder = await prisma.folder.findFirst({ where: { ownerId, parentId, name: last, isZeroKnowledge: false } });
+  const folder = await prisma.folder.findFirst({ where: { ownerId, parentId, name: last, isZeroKnowledge: false, spaceId: null } });
   if (folder) return { type: 'folder', folder, parentId };
   const file = await prisma.fileObject.findFirst({
-    where: { ownerId, folderId: parentId, name: last, encMode: 'SERVER', deletedAt: null },
+    where: { ownerId, folderId: parentId, name: last, encMode: 'SERVER', deletedAt: null, spaceId: null },
   });
   if (file) return { type: 'file', file, parentId };
   return { type: 'missing', parentId, name: last };
@@ -201,9 +201,9 @@ export const webdavRoutes: FastifyPluginAsync = async (app) => {
       if (depth !== '0' && node.type !== 'file') {
         const parentId = node.type === 'root' ? null : node.folder.id;
         const [folders, files] = await Promise.all([
-          prisma.folder.findMany({ where: { ownerId, parentId, isZeroKnowledge: false }, orderBy: { name: 'asc' } }),
+          prisma.folder.findMany({ where: { ownerId, parentId, isZeroKnowledge: false, spaceId: null }, orderBy: { name: 'asc' } }),
           prisma.fileObject.findMany({
-            where: { ownerId, folderId: parentId, encMode: 'SERVER', deletedAt: null },
+            where: { ownerId, folderId: parentId, encMode: 'SERVER', deletedAt: null, spaceId: null },
             orderBy: { name: 'asc' },
           }),
         ]);

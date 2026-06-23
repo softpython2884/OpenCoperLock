@@ -25,6 +25,8 @@ export interface StoreFileOpts {
   stream: Readable;
   filename: string;
   mimetype: string;
+  /** When set, the file belongs to a Shared Space (ownerId is the space owner, who is billed). */
+  spaceId?: string | null;
 }
 
 export interface StoreFileResult {
@@ -41,8 +43,9 @@ export async function storeUserFile(ctx: AppContext, opts: StoreFileOpts): Promi
   try {
     const result = await ingestPlaintext(ctx, opts.stream, { maxBytes: allowance, storageKey });
 
+    const spaceId = opts.spaceId ?? null;
     const existing = isVersionable(opts.filename, opts.mimetype)
-      ? await findVersionTarget(opts.ownerId, opts.folderId, opts.filename)
+      ? await findVersionTarget(opts.ownerId, opts.folderId, opts.filename, spaceId)
       : null;
 
     if (existing) {
@@ -71,6 +74,7 @@ export async function storeUserFile(ctx: AppContext, opts: StoreFileOpts): Promi
       data: {
         ownerId: opts.ownerId,
         folderId: opts.folderId,
+        spaceId,
         name: opts.filename,
         sizeBytes: BigInt(result.sizeBytes),
         mimeType: opts.mimetype,

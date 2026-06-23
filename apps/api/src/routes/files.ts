@@ -18,7 +18,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
   app.get('/', async (req) => {
     const { folderId } = req.query as { folderId?: string };
     const files = await prisma.fileObject.findMany({
-      where: { ownerId: req.user!.id, folderId: folderId ?? null, deletedAt: null },
+      where: { ownerId: req.user!.id, spaceId: null, folderId: folderId ?? null, deletedAt: null },
       orderBy: { createdAt: 'desc' },
     });
     return { files: files.map(toPublicFile) };
@@ -34,6 +34,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     const files = await prisma.fileObject.findMany({
       where: {
         ownerId: req.user!.id,
+        spaceId: null,
         encMode: 'SERVER',
         deletedAt: null,
         name: { contains: term, mode: 'insensitive' },
@@ -50,7 +51,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
 
     if (folderId) {
       const folder = await prisma.folder.findFirst({
-        where: { id: folderId, ownerId: req.user!.id },
+        where: { id: folderId, ownerId: req.user!.id, spaceId: null },
       });
       if (!folder) return reply.code(404).send({ error: 'Folder not found' });
       if (folder.isZeroKnowledge) {
@@ -94,7 +95,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
   app.get('/:id/download', async (req, reply) => {
     const { id } = req.params as { id: string };
     const file = await prisma.fileObject.findFirst({
-      where: { id, ownerId: req.user!.id },
+      where: { id, ownerId: req.user!.id, spaceId: null },
     });
     if (!file) return reply.code(404).send({ error: 'File not found' });
     if (file.encMode === 'ZK') {
@@ -118,7 +119,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     const body = parseOr400(reply, updateFileSchema, req.body);
     if (!body) return;
 
-    const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id } });
+    const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id, spaceId: null } });
     if (!file) return reply.code(404).send({ error: 'File not found' });
     if (file.encMode === 'ZK') {
       return reply.code(400).send({ error: 'Vault files are managed through the vault API' });
@@ -126,7 +127,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
 
     if (body.folderId !== undefined && body.folderId !== null) {
       const folder = await prisma.folder.findFirst({
-        where: { id: body.folderId, ownerId: req.user!.id },
+        where: { id: body.folderId, ownerId: req.user!.id, spaceId: null },
       });
       if (!folder) return reply.code(404).send({ error: 'Target folder not found' });
       if (folder.isZeroKnowledge) {
@@ -148,7 +149,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
   // GET /files/:id/versions — list retained prior versions (newest first).
   app.get('/:id/versions', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id } });
+    const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id, spaceId: null } });
     if (!file) return reply.code(404).send({ error: 'File not found' });
     const versions = await prisma.fileVersion.findMany({
       where: { fileId: id },
@@ -168,7 +169,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
   // GET /files/:id/versions/:versionId/download — decrypt and stream a past version.
   app.get('/:id/versions/:versionId/download', async (req, reply) => {
     const { id, versionId } = req.params as { id: string; versionId: string };
-    const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id } });
+    const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id, spaceId: null } });
     if (!file) return reply.code(404).send({ error: 'File not found' });
     const version = await prisma.fileVersion.findFirst({ where: { id: versionId, fileId: id } });
     if (!version) return reply.code(404).send({ error: 'Version not found' });
@@ -183,7 +184,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
   // content is first snapshotted as a new version, so nothing is lost (a metadata swap).
   app.post('/:id/versions/:versionId/restore', async (req, reply) => {
     const { id, versionId } = req.params as { id: string; versionId: string };
-    const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id } });
+    const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id, spaceId: null } });
     if (!file) return reply.code(404).send({ error: 'File not found' });
     const version = await prisma.fileVersion.findFirst({ where: { id: versionId, fileId: id } });
     if (!version) return reply.code(404).send({ error: 'Version not found' });
@@ -224,7 +225,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
   // POST /files/:id/virustotal — on-demand hash lookup (no file contents sent).
   app.post('/:id/virustotal', async (req, reply) => {
     const { id } = req.params as { id: string };
-    const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id } });
+    const file = await prisma.fileObject.findFirst({ where: { id, ownerId: req.user!.id, spaceId: null } });
     if (!file) return reply.code(404).send({ error: 'File not found' });
     if (!file.sha256) return reply.code(400).send({ error: 'File has no hash to look up' });
     if (!app.ctx.virustotal.enabled) {

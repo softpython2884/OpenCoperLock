@@ -9,6 +9,8 @@ import type {
   Role,
   ShareAccess,
   ShareViewType,
+  SpaceAccessRole,
+  SpaceRole,
 } from './constants.js';
 
 export interface PublicUser {
@@ -136,6 +138,35 @@ export interface PublicShareView {
   requiresCode?: boolean;
   requiresAuth?: boolean;
   expired?: boolean;
+}
+
+// ── Shared Spaces ──────────────────────────────────────────────────────────--
+
+/** Summary of a Shared Space as seen by one caller (their role, who owns it, headline counts). */
+export interface PublicSpace {
+  id: string;
+  name: string;
+  /** The caller's effective role on this space. */
+  myRole: SpaceAccessRole;
+  ownerId: string;
+  ownerEmail: string;
+  memberCount: number;
+  /** Total bytes stored in the space (charged to the owner's quota). */
+  usedBytes: number;
+  createdAt: string;
+}
+
+/** One member of a space (never includes the owner, who is implicit). */
+export interface PublicSpaceMember {
+  userId: string;
+  email: string;
+  role: SpaceRole;
+  joinedAt: string;
+}
+
+/** Full detail returned for a single space, including its member list. */
+export interface PublicSpaceDetail extends PublicSpace {
+  members: PublicSpaceMember[];
 }
 
 export interface ApiError {

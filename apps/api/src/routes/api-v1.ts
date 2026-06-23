@@ -28,7 +28,7 @@ export const apiV1Routes: FastifyPluginAsync = async (app) => {
   // GET /folders — list the user's normal folders.
   app.get('/folders', { preHandler: app.tokenAuth('read') }, async (req) => {
     const folders = await prisma.folder.findMany({
-      where: { ownerId: req.user!.id },
+      where: { ownerId: req.user!.id, spaceId: null },
       orderBy: { name: 'asc' },
     });
     return { folders: folders.map(toPublicFolder) };
@@ -42,7 +42,7 @@ export const apiV1Routes: FastifyPluginAsync = async (app) => {
     const parentId = typeof body.parentId === 'string' ? body.parentId : null;
 
     if (parentId) {
-      const parent = await prisma.folder.findFirst({ where: { id: parentId, ownerId: req.user!.id } });
+      const parent = await prisma.folder.findFirst({ where: { id: parentId, ownerId: req.user!.id, spaceId: null } });
       if (!parent) return reply.code(404).send({ error: 'Parent folder not found' });
       if (parent.isZeroKnowledge) return reply.code(400).send({ error: 'Vault folders are not accessible via the API' });
     }
@@ -61,11 +61,11 @@ export const apiV1Routes: FastifyPluginAsync = async (app) => {
     const target = folderId ?? null;
     if (!folderAllowed(req, target)) return reply.code(403).send({ error: 'Token is restricted to another folder' });
     if (target) {
-      const folder = await prisma.folder.findFirst({ where: { id: target, ownerId: req.user!.id } });
+      const folder = await prisma.folder.findFirst({ where: { id: target, ownerId: req.user!.id, spaceId: null } });
       if (!folder) return reply.code(404).send({ error: 'Folder not found' });
     }
     const files = await prisma.fileObject.findMany({
-      where: { ownerId: req.user!.id, folderId: target, encMode: 'SERVER', deletedAt: null },
+      where: { ownerId: req.user!.id, spaceId: null, folderId: target, encMode: 'SERVER', deletedAt: null },
       orderBy: { name: 'asc' },
     });
     return { files: files.map(toPublicFile) };
@@ -78,7 +78,7 @@ export const apiV1Routes: FastifyPluginAsync = async (app) => {
     if (!folderAllowed(req, target)) return reply.code(403).send({ error: 'Token is restricted to another folder' });
 
     if (target) {
-      const folder = await prisma.folder.findFirst({ where: { id: target, ownerId: req.user!.id } });
+      const folder = await prisma.folder.findFirst({ where: { id: target, ownerId: req.user!.id, spaceId: null } });
       if (!folder) return reply.code(404).send({ error: 'Folder not found' });
       if (folder.isZeroKnowledge) return reply.code(400).send({ error: 'Vault folders are not accessible via the API' });
     }
@@ -111,7 +111,7 @@ export const apiV1Routes: FastifyPluginAsync = async (app) => {
   app.get('/files/:id/download', { preHandler: app.tokenAuth('read') }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const file = await prisma.fileObject.findFirst({
-      where: { id, ownerId: req.user!.id, encMode: 'SERVER', deletedAt: null },
+      where: { id, ownerId: req.user!.id, spaceId: null, encMode: 'SERVER', deletedAt: null },
     });
     if (!file) return reply.code(404).send({ error: 'File not found' });
     if (!folderAllowed(req, file.folderId)) return reply.code(403).send({ error: 'Token is restricted to another folder' });

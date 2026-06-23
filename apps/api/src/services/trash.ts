@@ -16,7 +16,7 @@ async function subtreeFolderIds(ownerId: string, rootId: string): Promise<string
   const ids = [rootId];
   for (let i = 0; i < ids.length; i += 1) {
     const children = await prisma.folder.findMany({
-      where: { parentId: ids[i], ownerId },
+      where: { parentId: ids[i], ownerId, spaceId: null },
       select: { id: true },
     });
     ids.push(...children.map((c) => c.id));
@@ -28,14 +28,14 @@ async function subtreeFolderIds(ownerId: string, rootId: string): Promise<string
 
 export async function trashFile(ownerId: string, fileId: string): Promise<boolean> {
   const res = await prisma.fileObject.updateMany({
-    where: { id: fileId, ownerId, deletedAt: null },
+    where: { id: fileId, ownerId, spaceId: null, deletedAt: null },
     data: { deletedAt: new Date() },
   });
   return res.count > 0;
 }
 
 export async function trashFolder(ownerId: string, folderId: string): Promise<boolean> {
-  const owned = await prisma.folder.findFirst({ where: { id: folderId, ownerId, deletedAt: null } });
+  const owned = await prisma.folder.findFirst({ where: { id: folderId, ownerId, spaceId: null, deletedAt: null } });
   if (!owned) return false;
   const ids = await subtreeFolderIds(ownerId, folderId);
   const now = new Date();
@@ -49,12 +49,12 @@ export async function trashFolder(ownerId: string, folderId: string): Promise<bo
 // ── Restore ──────────────────────────────────────────────────────────────────
 
 export async function restoreFile(ownerId: string, fileId: string): Promise<boolean> {
-  const file = await prisma.fileObject.findFirst({ where: { id: fileId, ownerId, deletedAt: { not: null } } });
+  const file = await prisma.fileObject.findFirst({ where: { id: fileId, ownerId, spaceId: null, deletedAt: { not: null } } });
   if (!file) return false;
   // If the file's folder is gone or still trashed, restore it to the account root.
   let folderId = file.folderId;
   if (folderId) {
-    const parent = await prisma.folder.findFirst({ where: { id: folderId, ownerId } });
+    const parent = await prisma.folder.findFirst({ where: { id: folderId, ownerId, spaceId: null } });
     if (!parent || parent.deletedAt) folderId = null;
   }
   await prisma.fileObject.update({ where: { id: fileId }, data: { deletedAt: null, folderId } });
@@ -62,13 +62,13 @@ export async function restoreFile(ownerId: string, fileId: string): Promise<bool
 }
 
 export async function restoreFolder(ownerId: string, folderId: string): Promise<boolean> {
-  const folder = await prisma.folder.findFirst({ where: { id: folderId, ownerId, deletedAt: { not: null } } });
+  const folder = await prisma.folder.findFirst({ where: { id: folderId, ownerId, spaceId: null, deletedAt: { not: null } } });
   if (!folder) return false;
   const ids = await subtreeFolderIds(ownerId, folderId);
   // If the parent is gone or still trashed, restore this folder to the root.
   let parentId = folder.parentId;
   if (parentId) {
-    const parent = await prisma.folder.findFirst({ where: { id: parentId, ownerId } });
+    const parent = await prisma.folder.findFirst({ where: { id: parentId, ownerId, spaceId: null } });
     if (!parent || parent.deletedAt) parentId = null;
   }
   await prisma.$transaction([
@@ -102,7 +102,7 @@ async function purgeFiles(ctx: AppContext, ownerId: string, files: { id: string;
 
 export async function purgeFile(ctx: AppContext, ownerId: string, fileId: string): Promise<boolean> {
   const file = await prisma.fileObject.findFirst({
-    where: { id: fileId, ownerId, deletedAt: { not: null } },
+    where: { id: fileId, ownerId, spaceId: null, deletedAt: { not: null } },
     select: { id: true, storageKey: true, sizeBytes: true },
   });
   if (!file) return false;
@@ -111,7 +111,7 @@ export async function purgeFile(ctx: AppContext, ownerId: string, fileId: string
 }
 
 export async function purgeFolder(ctx: AppContext, ownerId: string, folderId: string): Promise<boolean> {
-  const folder = await prisma.folder.findFirst({ where: { id: folderId, ownerId, deletedAt: { not: null } } });
+  const folder = await prisma.folder.findFirst({ where: { id: folderId, ownerId, spaceId: null, deletedAt: { not: null } } });
   if (!folder) return false;
   const ids = await subtreeFolderIds(ownerId, folderId);
   const files = await prisma.fileObject.findMany({
@@ -126,13 +126,13 @@ export async function purgeFolder(ctx: AppContext, ownerId: string, folderId: st
 
 export async function emptyTrash(ctx: AppContext, ownerId: string): Promise<void> {
   const folders = await prisma.folder.findMany({
-    where: { ownerId, deletedAt: { not: null }, OR: [{ parentId: null }, { parent: { deletedAt: null } }] },
+    where: { ownerId, spaceId: null, deletedAt: { not: null }, OR: [{ parentId: null }, { parent: { deletedAt: null } }] },
     select: { id: true },
   });
   for (const f of folders) await purgeFolder(ctx, ownerId, f.id);
 
   const files = await prisma.fileObject.findMany({
-    where: { ownerId, deletedAt: { not: null } },
+    where: { ownerId, spaceId: null, deletedAt: { not: null } },
     select: { id: true, storageKey: true, sizeBytes: true },
   });
   await purgeFiles(ctx, ownerId, files);
@@ -179,11 +179,11 @@ export interface TrashEntry {
 export async function listTrash(ownerId: string): Promise<TrashEntry[]> {
   const [folders, files] = await Promise.all([
     prisma.folder.findMany({
-      where: { ownerId, deletedAt: { not: null }, OR: [{ parentId: null }, { parent: { deletedAt: null } }] },
+      where: { ownerId, spaceId: null, deletedAt: { not: null }, OR: [{ parentId: null }, { parent: { deletedAt: null } }] },
       orderBy: { deletedAt: 'desc' },
     }),
     prisma.fileObject.findMany({
-      where: { ownerId, deletedAt: { not: null }, OR: [{ folderId: null }, { folder: { deletedAt: null } }] },
+      where: { ownerId, spaceId: null, deletedAt: { not: null }, OR: [{ folderId: null }, { folder: { deletedAt: null } }] },
       orderBy: { deletedAt: 'desc' },
     }),
   ]);

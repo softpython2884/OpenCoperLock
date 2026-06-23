@@ -42,6 +42,24 @@ The server stores only ciphertext, the wrapped key and IVs. It **cannot** read v
 recover them if you lose the passphrase, or scan them. ZK folders are therefore excluded
 from antivirus, VirusTotal, Remote-Upload and Quick-Upload by design.
 
+## Shared Spaces — authorization, not new cryptography
+
+The personal Drive's core invariant is that every folder and file is filtered by
+`ownerId === the requesting user`. **Shared Spaces** extend that without weakening it:
+
+- Space content is ordinary **`SERVER`-encrypted** rows (never `ZK` — blind ciphertext can't
+  be shared without a per-user PKI, which is out of scope). There is **no new cryptography**.
+- Every row carries the **space owner's** `ownerId` (so the owner's quota is charged) plus a
+  `spaceId`. Rows with a `spaceId` are reachable **only** through the `/spaces` routes; the
+  personal Drive, search, REST API, WebDAV, share-link and export endpoints all filter
+  `spaceId = null`, so shared content never leaks into a personal listing.
+- The single new piece is an **authorization gate**, centralized in one function
+  (`getSpaceAccess`), which replaces the `ownerId === me` check for shared content. It returns
+  the caller's role — `OWNER`, `EDITOR` (read/write) or `VIEWER` (read-only) — or denies with a
+  `404` that does not reveal the space's existence.
+- **Lifecycle:** deleting a space either hard-deletes its content (freeing the owner's quota)
+  or transfers ownership — and the storage cost — to the earliest-joined member.
+
 ## Authentication & sessions
 
 - Passwords are hashed with **Argon2id** (memory-hard).

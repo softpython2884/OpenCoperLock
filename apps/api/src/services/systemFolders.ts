@@ -15,7 +15,7 @@ import { prisma } from '../db.js';
 /** Return the id of a named, normal root folder for this user, creating it if absent. */
 export async function ensureNamedRootFolder(userId: string, name: string): Promise<string> {
   const existing = await prisma.folder.findFirst({
-    where: { ownerId: userId, parentId: null, name, isZeroKnowledge: false },
+    where: { ownerId: userId, parentId: null, name, isZeroKnowledge: false, spaceId: null },
     select: { id: true },
   });
   if (existing) return existing.id;

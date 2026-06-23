@@ -373,14 +373,15 @@ runIf('API integration', () => {
       expect(probe.statusCode).toBe(200);
       expect(probe.json().valid).toBe(true);
 
-      // The same code can't be created twice.
+      // The same code can't be created twice. The response is deliberately generic (403
+      // UNAUTHORIZED, not a 409) so it never reveals whether a given code already exists.
       const dup = await app.inject({
         method: 'POST',
         url: '/admin/quick-codes',
         headers: authHeaders(auth),
         payload: { code: 'NIGHT-2024' },
       });
-      expect(dup.statusCode).toBe(409);
+      expect(dup.statusCode).toBe(403);
 
       // An invalid code shape is rejected by validation.
       const bad = await app.inject({
@@ -742,6 +743,104 @@ runIf('API integration', () => {
       const res = await app.inject({ method: 'GET', url: '/admin/alerts', headers: { cookie: auth.cookie } });
       expect(res.json().infectedCount).toBeGreaterThanOrEqual(1);
       expect(res.json().warnings.some((w: string) => w.includes('infected'))).toBe(true);
+    });
+  });
+
+  describe('shared spaces', () => {
+    async function makeSpace(ownerEmail: string) {
+      const owner = await createUser({ email: ownerEmail, password: 'correct-horse-battery' });
+      const auth = await login(app, ownerEmail, 'correct-horse-battery');
+      const res = await app.inject({ method: 'POST', url: '/spaces', headers: authHeaders(auth), payload: { name: 'Team' } });
+      expect(res.statusCode).toBe(201);
+      return { owner, auth, spaceId: res.json().space.id as string };
+    }
+
+    it('charges the owner, lets EDITORs write, keeps VIEWERs read-only, and blocks non-members', async () => {
+      const { owner, auth: ownerAuth, spaceId } = await makeSpace('sp-owner@test.local');
+      await createUser({ email: 'sp-editor@test.local', password: 'correct-horse-battery' });
+      await createUser({ email: 'sp-viewer@test.local', password: 'correct-horse-battery' });
+      await createUser({ email: 'sp-stranger@test.local', password: 'correct-horse-battery' });
+
+      // Owner adds an EDITOR and a VIEWER by email.
+      const addE = await app.inject({ method: 'POST', url: `/spaces/${spaceId}/members`, headers: authHeaders(ownerAuth), payload: { email: 'sp-editor@test.local', role: 'EDITOR' } });
+      expect(addE.statusCode).toBe(201);
+      await app.inject({ method: 'POST', url: `/spaces/${spaceId}/members`, headers: authHeaders(ownerAuth), payload: { email: 'sp-viewer@test.local', role: 'VIEWER' } });
+
+      // EDITOR uploads — billed to the OWNER's quota, with ownerId = owner.
+      const editorAuth = await login(app, 'sp-editor@test.local', 'correct-horse-battery');
+      const payload = Buffer.from('shared space content');
+      const up = await uploadFile(app, `/spaces/${spaceId}/files`, editorAuth, 'doc.txt', payload);
+      expect(up.statusCode).toBe(201);
+      const fileId = up.json().file.id as string;
+      const ownerRow = await prisma.user.findUniqueOrThrow({ where: { id: owner.id } });
+      expect(Number(ownerRow.usedBytes)).toBe(payload.length);
+      const fileRow = await prisma.fileObject.findUniqueOrThrow({ where: { id: fileId } });
+      expect(fileRow.ownerId).toBe(owner.id);
+      expect(fileRow.spaceId).toBe(spaceId);
+
+      // VIEWER can read & download but not upload or delete.
+      const viewerAuth = await login(app, 'sp-viewer@test.local', 'correct-horse-battery');
+      const vlist = await app.inject({ method: 'GET', url: `/spaces/${spaceId}/files`, headers: { cookie: viewerAuth.cookie } });
+      expect(vlist.statusCode).toBe(200);
+      expect(vlist.json().files.map((f: { id: string }) => f.id)).toContain(fileId);
+      const vdl = await app.inject({ method: 'GET', url: `/spaces/${spaceId}/files/${fileId}/download`, headers: { cookie: viewerAuth.cookie } });
+      expect(vdl.statusCode).toBe(200);
+      expect(Buffer.from(vdl.rawPayload).equals(payload)).toBe(true);
+      const vup = await uploadFile(app, `/spaces/${spaceId}/files`, viewerAuth, 'nope.txt', Buffer.from('x'));
+      expect(vup.statusCode).toBe(403);
+      const vdel = await app.inject({ method: 'DELETE', url: `/spaces/${spaceId}/files/${fileId}`, headers: authHeaders(viewerAuth) });
+      expect(vdel.statusCode).toBe(403);
+
+      // A non-member sees nothing — the space appears not to exist.
+      const strangerAuth = await login(app, 'sp-stranger@test.local', 'correct-horse-battery');
+      expect((await app.inject({ method: 'GET', url: `/spaces/${spaceId}`, headers: { cookie: strangerAuth.cookie } })).statusCode).toBe(404);
+      expect((await app.inject({ method: 'GET', url: `/spaces/${spaceId}/files`, headers: { cookie: strangerAuth.cookie } })).statusCode).toBe(404);
+
+      // Isolation: the space content never leaks into the owner's personal Drive listings.
+      const personalFiles = await app.inject({ method: 'GET', url: '/files', headers: { cookie: ownerAuth.cookie } });
+      expect(personalFiles.json().files.map((f: { id: string }) => f.id)).not.toContain(fileId);
+      const personalFolders = await app.inject({ method: 'GET', url: '/folders', headers: { cookie: ownerAuth.cookie } });
+      expect(personalFolders.json().folders.length).toBe(0);
+    });
+
+    it('transfers ownership and the storage cost to the earliest member', async () => {
+      const { owner, auth: ownerAuth, spaceId } = await makeSpace('tr-owner@test.local');
+      const heir = await createUser({ email: 'tr-heir@test.local', password: 'correct-horse-battery' });
+      await app.inject({ method: 'POST', url: `/spaces/${spaceId}/members`, headers: authHeaders(ownerAuth), payload: { email: 'tr-heir@test.local', role: 'EDITOR' } });
+
+      const payload = Buffer.from('to be inherited');
+      await uploadFile(app, `/spaces/${spaceId}/files`, ownerAuth, 'doc.txt', payload);
+      expect(Number((await prisma.user.findUniqueOrThrow({ where: { id: owner.id } })).usedBytes)).toBe(payload.length);
+
+      const del = await app.inject({ method: 'DELETE', url: `/spaces/${spaceId}?mode=transfer`, headers: authHeaders(ownerAuth) });
+      expect(del.statusCode).toBe(200);
+      expect(del.json().transferredTo).toBe(heir.id);
+
+      // Quota moved from old owner to heir; the space and its files now belong to the heir.
+      expect(Number((await prisma.user.findUniqueOrThrow({ where: { id: owner.id } })).usedBytes)).toBe(0);
+      expect(Number((await prisma.user.findUniqueOrThrow({ where: { id: heir.id } })).usedBytes)).toBe(payload.length);
+      const space = await prisma.sharedSpace.findUniqueOrThrow({ where: { id: spaceId } });
+      expect(space.ownerId).toBe(heir.id);
+      expect(await prisma.sharedSpaceMember.count({ where: { spaceId } })).toBe(0); // heir is now owner, not a member
+
+      // The heir now sees the space as OWNER; the old owner has lost access.
+      const heirAuth = await login(app, 'tr-heir@test.local', 'correct-horse-battery');
+      const seen = await app.inject({ method: 'GET', url: `/spaces/${spaceId}`, headers: { cookie: heirAuth.cookie } });
+      expect(seen.json().space.myRole).toBe('OWNER');
+      expect((await app.inject({ method: 'GET', url: `/spaces/${spaceId}`, headers: { cookie: ownerAuth.cookie } })).statusCode).toBe(404);
+    });
+
+    it('delete mode wipes the space content and frees the owner quota', async () => {
+      const { owner, auth: ownerAuth, spaceId } = await makeSpace('dl-owner@test.local');
+      await uploadFile(app, `/spaces/${spaceId}/files`, ownerAuth, 'doc.txt', Buffer.from('disposable'));
+      expect(Number((await prisma.user.findUniqueOrThrow({ where: { id: owner.id } })).usedBytes)).toBeGreaterThan(0);
+
+      const del = await app.inject({ method: 'DELETE', url: `/spaces/${spaceId}?mode=delete`, headers: authHeaders(ownerAuth) });
+      expect(del.statusCode).toBe(200);
+      expect(del.json().deleted).toBe(true);
+      expect(await prisma.sharedSpace.findUnique({ where: { id: spaceId } })).toBeNull();
+      expect(await prisma.fileObject.count({ where: { spaceId } })).toBe(0);
+      expect(Number((await prisma.user.findUniqueOrThrow({ where: { id: owner.id } })).usedBytes)).toBe(0);
     });
   });
 

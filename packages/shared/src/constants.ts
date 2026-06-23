@@ -31,6 +31,19 @@ export type ShareViewType = (typeof SHARE_VIEW_TYPES)[number];
 export const SHARE_ACCESS_MODES = ['PUBLIC', 'CODE', 'AUTHENTICATED'] as const;
 export type ShareAccess = (typeof SHARE_ACCESS_MODES)[number];
 
+/**
+ * Role of a member inside a Shared Space (mirrors the Prisma `SpaceRole` enum):
+ *  - EDITOR can upload, rename, move and delete content,
+ *  - VIEWER can only browse and download.
+ * The space OWNER is implicit (not a member row) and always has full control.
+ */
+export const SPACE_ROLES = ['EDITOR', 'VIEWER'] as const;
+export type SpaceRole = (typeof SPACE_ROLES)[number];
+
+/** A caller's effective role on a space: the two member roles plus the implicit OWNER. */
+export const SPACE_ACCESS_ROLES = ['OWNER', 'EDITOR', 'VIEWER'] as const;
+export type SpaceAccessRole = (typeof SPACE_ACCESS_ROLES)[number];
+
 /** Name of the session cookie. */
 export const SESSION_COOKIE = 'ocl_session';
 

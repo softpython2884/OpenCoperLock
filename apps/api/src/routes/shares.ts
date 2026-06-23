@@ -36,7 +36,7 @@ export const shareRoutes: FastifyPluginAsync = async (app) => {
     let targetName: string;
     if (body.fileId) {
       const file = await prisma.fileObject.findFirst({
-        where: { id: body.fileId, ownerId: req.user!.id },
+        where: { id: body.fileId, ownerId: req.user!.id, spaceId: null },
       });
       if (!file) return reply.code(404).send({ error: 'File not found' });
       if (file.encMode === 'ZK') {
@@ -45,7 +45,7 @@ export const shareRoutes: FastifyPluginAsync = async (app) => {
       targetName = file.name;
     } else {
       const folder = await prisma.folder.findFirst({
-        where: { id: body.folderId!, ownerId: req.user!.id },
+        where: { id: body.folderId!, ownerId: req.user!.id, spaceId: null },
       });
       if (!folder) return reply.code(404).send({ error: 'Folder not found' });
       if (folder.isZeroKnowledge) {

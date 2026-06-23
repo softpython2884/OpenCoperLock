@@ -24,6 +24,10 @@ the source.
 
 - **Drive** — browse, upload (streaming), download and delete files and folders, with a
   per-user storage quota and a deployment-wide cap.
+- **Shared Spaces** — collaborative areas owned by one user and shared with a group as
+  *editor* (read/write) or *viewer* (read-only). The owner pays for the storage; deleting a
+  space either wipes it or transfers it (and its storage cost) to the longest-standing member.
+  Server-side encrypted only — no zero-knowledge, which can't be shared.
 - **Quick-Upload** — open a temporary drop zone on any device by entering an active code,
   no full login required. Optional password, expiry and usage limit per code.
 - **Remote-Upload** — paste a link and the server fetches the file directly, so a phone on

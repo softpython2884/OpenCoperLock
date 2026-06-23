@@ -65,7 +65,9 @@ export function UpdatePanel() {
 
   // Poll while an update is running (survives the API restart it triggers).
   useEffect(() => {
-    const running = info?.status.state === 'running';
+    // Poll only while an update is ACTUALLY in progress — not when the status is stuck/stale,
+    // otherwise the 4s poll (check=false) keeps wiping a "Check for updates" result.
+    const running = info?.status.state === 'running' && !info?.stuck;
     if (running && !pollRef.current) {
       pollRef.current = setInterval(() => {
         void fetchVersion(false).catch(() => {
@@ -83,7 +85,7 @@ export function UpdatePanel() {
         pollRef.current = null;
       }
     };
-  }, [info?.status.state, fetchVersion]);
+  }, [info?.status.state, info?.stuck, fetchVersion]);
 
   async function check() {
     setBusy('check');

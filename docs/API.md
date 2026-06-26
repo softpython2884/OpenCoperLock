@@ -130,7 +130,9 @@ The name a client shows for the mount depends on the client:
 - **Windows Explorer ignores the advertised name** and labels the mapped drive from the **last
   segment of the URL** you mounted. So `…/api/dav/` shows up as *“dav (\\host@SSL\DavWWWRoot\…)”*.
   To get a custom label like **OpenCoper**, expose WebDAV under a path ending in that word and
-  mount *that* URL — the server already rewrites hrefs from `X-Forwarded-Prefix`:
+  mount *that* URL — the server already rewrites hrefs from `X-Forwarded-Prefix`. **The guided
+  installer (`scripts/setup-wizard.sh`) already adds this `/OpenCoper/` location for you**; mount
+  `https://<host>/OpenCoper/`. To wire it by hand:
 
   ```nginx
   # Mount https://<host>/OpenCoper/  →  Windows labels the drive "OpenCoper"

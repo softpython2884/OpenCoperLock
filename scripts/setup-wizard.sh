@@ -123,6 +123,9 @@ TOPO="$(ask 'Choose 1, 2 or 3' '1')"
 
 WEB_DOMAIN=''; API_DOMAIN=''; APP_URL=''; NEXT_PUBLIC_API_URL=''
 SETUP_NGINX=false; SETUP_TLS=false
+# Friendly WebDAV mount name: used both for WEBDAV_NAME (.env, the advertised DAV:displayname) and
+# for the nginx location path, so the Windows network drive shows as this instead of "dav".
+DAV_NAME='OpenCoper'
 case "$TOPO" in
   1)
     WEB_DOMAIN="$(ask 'App domain' 'copper.forgenet.fr')"
@@ -423,6 +426,9 @@ umask 077
   printf 'CLAMAV_HOST=127.0.0.1\n'
   printf 'CLAMAV_PORT=3310\n\n'
   emit_secret VIRUSTOTAL_API_KEY "$VIRUSTOTAL_API_KEY"
+  printf '\n'
+  # WebDAV mount label (Finder/Cyberduck/GNOME honour it). Matches the friendly nginx path below.
+  printf 'WEBDAV_NAME=%s\n' "$DAV_NAME"
 } > .env
 umask 022
 ok ".env written (mode 600). Keep MASTER_KEY safe — losing it loses all server-side files."
@@ -440,6 +446,9 @@ if $SETUP_NGINX; then
   say ""; info "Step 7 / 8 — Configuring nginx"
   need_sudo
   NGINX_CONF="/etc/nginx/sites-available/opencoperlock.conf"
+  # $DAV_NAME (set near the top) is exposed as a friendly WebDAV path so the Windows network drive
+  # shows as "$DAV_NAME" (Explorer labels the drive from the URL's last segment, not the server's
+  # advertised name). The default /dav (or /api/dav) mount keeps working too.
   # Larger client_max_body_size so big uploads aren't rejected by the proxy.
   if [[ "$TOPO" == 1 ]]; then
     $SUDO tee "$NGINX_CONF" >/dev/null <<NGINX
@@ -460,6 +469,19 @@ server {
     server_name ${API_DOMAIN};
     client_max_body_size 0;
     proxy_request_buffering off;
+    # Friendly WebDAV mount: https://${API_DOMAIN}/${DAV_NAME}/ → drive labelled "${DAV_NAME}".
+    location /${DAV_NAME}/ {
+        proxy_pass http://127.0.0.1:${API_PORT}/dav/;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Prefix /${DAV_NAME};
+        proxy_set_header Authorization \$http_authorization;
+        proxy_pass_request_headers on;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
     location / {
         proxy_pass http://127.0.0.1:${API_PORT};
         proxy_set_header Host \$host;
@@ -475,6 +497,21 @@ server {
     listen 80;
     server_name ${WEB_DOMAIN};
     client_max_body_size 0;
+    # Friendly WebDAV mount: https://${WEB_DOMAIN}/${DAV_NAME}/ → drive labelled "${DAV_NAME}" on
+    # Windows. (WebDAV also stays reachable at /api/dav/ via the /api/ block below.)
+    location /${DAV_NAME}/ {
+        proxy_pass http://127.0.0.1:${API_PORT}/dav/;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Prefix /${DAV_NAME};
+        proxy_set_header Authorization \$http_authorization;
+        proxy_pass_request_headers on;
+    }
     location /api/ {
         proxy_pass http://127.0.0.1:${API_PORT}/;
         proxy_request_buffering off;

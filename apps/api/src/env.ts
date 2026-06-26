@@ -70,6 +70,12 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+
+  // Display name advertised for the WebDAV root (DAV:displayname). Clients that honour it
+  // (Finder, Cyberduck, GNOME…) label the mount with this. Keep it short — some clients (and
+  // rename fields) truncate long names. NOTE: Windows Explorer ignores this and labels the
+  // mapped drive from the URL's last path segment instead.
+  WEBDAV_NAME: z.string().default('OpenCoper'),
 });
 
 export type Env = z.infer<typeof envSchema> & { masterKey: Buffer };

@@ -121,6 +121,36 @@ from there rather than typing it).
 > clients that strip `/api` can list the root but fail to open folders. With it, hrefs become
 > `/api/dav/…` and navigation works.
 
+### Naming the drive
+
+The name a client shows for the mount depends on the client:
+
+- **Finder / Cyberduck / GNOME** use the server's advertised name. Set `WEBDAV_NAME` in `.env`
+  (default `OpenCoper`) and reconnect — the mount is labelled with that.
+- **Windows Explorer ignores the advertised name** and labels the mapped drive from the **last
+  segment of the URL** you mounted. So `…/api/dav/` shows up as *“dav (\\host@SSL\DavWWWRoot\…)”*.
+  To get a custom label like **OpenCoper**, expose WebDAV under a path ending in that word and
+  mount *that* URL — the server already rewrites hrefs from `X-Forwarded-Prefix`:
+
+  ```nginx
+  # Mount https://<host>/OpenCoper/  →  Windows labels the drive "OpenCoper"
+  location /OpenCoper/ {
+      proxy_pass http://127.0.0.1:4000/dav/;        # trailing slash → API sees /dav/
+      proxy_set_header Host               $host;
+      proxy_set_header Authorization      $http_authorization;
+      proxy_set_header X-Forwarded-Proto  $scheme;
+      proxy_set_header X-Forwarded-Prefix /OpenCoper;   # hrefs stay under /OpenCoper
+      proxy_pass_request_headers on;
+      client_max_body_size 0;
+      proxy_request_buffering off;
+      proxy_buffering off;
+      proxy_read_timeout 3600s;
+  }
+  ```
+
+  (Or simply map the drive and rename it in *This PC* — but the label above is set once, for
+  everyone.)
+
 ### Diagnosing a mount that won't connect
 
 First prove the server side works, independent of any OS client:

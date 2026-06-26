@@ -192,7 +192,7 @@ export const webdavRoutes: FastifyPluginAsync = async (app) => {
         };
       }
       if (node.type === 'root') {
-        parts.push(propXml(base, [], true, 'OpenCoperLock', 0, new Date(), '', quota));
+        parts.push(propXml(base, [], true, app.ctx.env.WEBDAV_NAME, 0, new Date(), '', quota));
       } else if (node.type === 'folder') {
         parts.push(propXml(base, segments, true, node.folder.name, 0, node.folder.createdAt, '', quota));
       } else {

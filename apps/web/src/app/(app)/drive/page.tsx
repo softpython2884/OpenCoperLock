@@ -1560,8 +1560,12 @@ export default function EspacesPage() {
   }
 
   if (!activeSpaceId) {
+    const spaceBgMenu: MenuItem[] = [{ label: t('drive.newSpace'), icon: Plus, onClick: () => void createSpace() }];
     return (
-      <div className="space-y-6">
+      <div
+        className="min-h-[70vh] space-y-6"
+        onContextMenu={(ev) => openCtx(ev, spaceBgMenu)}
+      >
         <Header title={t('drive.title')} subtitle={t('drive.subtitle')}>
           <button className="btn-primary" onClick={createSpace}>
             <Plus size={16} /> {t('drive.newSpace')}
@@ -1576,8 +1580,14 @@ export default function EspacesPage() {
               <div
                 key={s.id}
                 className="card group relative flex items-center gap-4 text-left transition hover:border-accent/40 hover:bg-white/[0.04]"
+                onContextMenu={(ev) =>
+                  openCtx(ev, [
+                    { label: t('drive.open'), icon: Folder, onClick: () => void enterSpace(s) },
+                    { label: t('drive.deleteSpaceAction'), icon: Trash2, danger: true, onClick: () => deleteSpace(s) },
+                  ])
+                }
               >
-                <button onClick={() => enterSpace(s)} className="flex min-w-0 flex-1 items-center gap-4 text-left">
+                <button onClick={() => enterSpace(s)} className="flex min-w-0 flex-1 items-center gap-4 rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50">
                   <span
                     className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl ${
                       s.isZeroKnowledge
@@ -1606,6 +1616,7 @@ export default function EspacesPage() {
         {paletteOpen && <CommandPalette items={paletteItems} onSearch={searchFiles} onClose={() => setPaletteOpen(false)} />}
         {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
         {viewing && <FileViewer source={viewing} onClose={() => setViewing(null)} />}
+        {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxMenu.items} onClose={() => setCtxMenu(null)} />}
       </div>
     );
   }
@@ -1699,10 +1710,12 @@ export default function EspacesPage() {
           </button>
         </Empty>
       ) : entries.length === 0 ? (
-        <Empty icon={Upload} title={t('drive.emptyFolderTitle')} hint={t('drive.emptyFolderHint')} />
+        <div className="min-h-[55vh]" onContextMenu={(ev) => !needPass && openCtx(ev, backgroundMenuItems())}>
+          <Empty icon={Upload} title={t('drive.emptyFolderTitle')} hint={t('drive.emptyFolderHint')} />
+        </div>
       ) : view === 'grid' ? (
         <div
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
+          className="grid min-h-[55vh] grid-cols-2 content-start gap-3 sm:grid-cols-3 lg:grid-cols-4"
           onContextMenu={(ev) => !needPass && openCtx(ev, backgroundMenuItems())}
         >
           {entries.map((e) => (
@@ -1720,7 +1733,7 @@ export default function EspacesPage() {
           ))}
         </div>
       ) : (
-        <div className="space-y-2" onContextMenu={(ev) => !needPass && openCtx(ev, backgroundMenuItems())}>
+        <div className="min-h-[55vh] space-y-2" onContextMenu={(ev) => !needPass && openCtx(ev, backgroundMenuItems())}>
           {/* column headers */}
           <div className="flex items-center gap-3 px-3 text-xs text-zinc-500">
             <button className="flex items-center gap-1 hover:text-zinc-300" onClick={() => toggleSort('name')}>
@@ -1745,7 +1758,10 @@ export default function EspacesPage() {
               {...pressProps(e)}
               className={`row cursor-default ${selected.has(e.key) ? 'bg-accent/[0.08] ring-1 ring-inset ring-accent/40' : ''}`}
             >
-              <button className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={(ev) => onNameClick(ev, e)}>
+              <button
+                className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50"
+                onClick={(ev) => onNameClick(ev, e)}
+              >
                 {rowIcon(e, isZk)}
                 <span className="truncate font-medium text-zinc-100">{e.name}</span>
               </button>

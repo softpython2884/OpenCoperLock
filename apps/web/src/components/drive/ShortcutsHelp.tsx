@@ -34,6 +34,8 @@ export function ShortcutsHelp({ onClose }: { onClose: () => void }) {
     { keys: [m, 'C'], label: t('drive.scCopy') },
     { keys: [m, 'X'], label: t('drive.scCut') },
     { keys: [m, 'V'], label: t('drive.scPaste') },
+    { keys: [m, 'Z'], label: t('drive.scUndo') },
+    { keys: [m, 'Y'], label: t('drive.scRedo') },
     { keys: [m, 'D'], label: t('drive.scDuplicate') },
     { keys: ['Esc'], label: t('drive.scClear') },
     { keys: ['?'], label: t('drive.scHelp') },

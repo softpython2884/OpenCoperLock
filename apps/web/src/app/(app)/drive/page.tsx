@@ -733,6 +733,73 @@ export default function EspacesPage() {
     return () => window.removeEventListener('ocl:queue-flushed', h);
   }, []);
 
+  // ── Undo / redo (Ctrl+Z / Ctrl+Y) ────────────────────────────────────────────
+  // A bounded stack of reversible actions. Delete = trash (undo restores); move / rename capture
+  // the previous location / name. Zero-Knowledge deletes are permanent, so they are NOT tracked.
+  type UndoAction =
+    | { type: 'trash'; items: { kind: 'file' | 'folder'; id: string }[] }
+    | { type: 'move'; moves: { kind: 'file' | 'folder'; id: string; from: string | null; to: string | null }[] }
+    | { type: 'rename'; kind: 'file' | 'folder'; id: string; from: string; to: string };
+  const undoRef = useRef<UndoAction[]>([]);
+  const redoRef = useRef<UndoAction[]>([]);
+  function pushUndo(a: UndoAction) {
+    undoRef.current.push(a);
+    if (undoRef.current.length > 30) undoRef.current.shift();
+    redoRef.current = [];
+  }
+  // Clear history when switching spaces so an undo can't act across contexts.
+  useEffect(() => {
+    undoRef.current = [];
+    redoRef.current = [];
+  }, [activeSpaceId]);
+
+  async function applyAction(a: UndoAction, dir: 'undo' | 'redo') {
+    if (a.type === 'trash') {
+      for (const it of a.items) {
+        const base = it.kind === 'folder' ? 'folders' : 'files';
+        if (dir === 'undo') await api.post(`/trash/${base}/${it.id}/restore`);
+        else await api.del(`/${base}/${it.id}`);
+      }
+    } else if (a.type === 'move') {
+      for (const m of a.moves) {
+        const target = dir === 'undo' ? m.from : m.to;
+        if (m.kind === 'folder') await api.patch(`/folders/${m.id}`, { parentId: target });
+        else await api.patch(`/files/${m.id}`, { folderId: target });
+      }
+    } else {
+      const name = dir === 'undo' ? a.from : a.to;
+      if (a.kind === 'folder') await api.patch(`/folders/${a.id}`, { name });
+      else await api.patch(`/files/${a.id}`, { name });
+    }
+  }
+
+  async function undo() {
+    const a = undoRef.current.pop();
+    if (!a) return;
+    try {
+      await applyAction(a, 'undo');
+      redoRef.current.push(a);
+      await Promise.all([loadFolders(), reloadCurrent()]);
+      toast(t('drive.undone'), 'info');
+    } catch (err) {
+      undoRef.current.push(a);
+      toast(err instanceof ApiError ? err.message : t('common.opFailed'), 'error');
+    }
+  }
+  async function redo() {
+    const a = redoRef.current.pop();
+    if (!a) return;
+    try {
+      await applyAction(a, 'redo');
+      undoRef.current.push(a);
+      await Promise.all([loadFolders(), reloadCurrent()]);
+      toast(t('drive.redone'), 'info');
+    } catch (err) {
+      redoRef.current.push(a);
+      toast(err instanceof ApiError ? err.message : t('common.opFailed'), 'error');
+    }
+  }
+
   // ── Selection ───────────────────────────────────────────────────────────────
   function toggleKey(key: string) {
     setSelected((prev) => {
@@ -863,12 +930,15 @@ export default function EspacesPage() {
   async function deleteFolder(id: string) {
     if (!(await confirm({ title: t('drive.deleteFolderTitle'), message: t('drive.deleteFolderMsg'), confirmLabel: t('drive.deleteToTrash') }))) return;
     await api.del(`/folders/${id}`);
+    if (!isZk) pushUndo({ type: 'trash', items: [{ kind: 'folder', id }] });
     await Promise.all([loadFolders(), refresh()]);
     toast(t('drive.movedToTrash'), 'success');
   }
   async function deleteFile(id: string) {
     if (!(await confirm({ title: t('drive.deleteFileTitle'), confirmLabel: t('drive.deleteToTrash') }))) return;
     await api.del(isZk ? `/zk/files/${id}` : `/files/${id}`);
+    // ZK deletes are permanent (no Trash) → not undoable.
+    if (!isZk) pushUndo({ type: 'trash', items: [{ kind: 'file', id }] });
     await reloadCurrent();
     toast(t('drive.movedToTrash'), 'success');
   }
@@ -897,12 +967,14 @@ export default function EspacesPage() {
     const name = await prompt({ title: t('drive.renameTitle'), label: t('drive.renameLabel'), defaultValue: f.name });
     if (!name || name === f.name) return;
     await api.patch(`/files/${f.id}`, { name });
+    if (!isZk) pushUndo({ type: 'rename', kind: 'file', id: f.id, from: f.name, to: name });
     await reloadCurrent();
   }
   async function renameFolder(f: PublicFolder) {
     const name = await prompt({ title: t('drive.renameFolderTitle'), label: t('drive.renameLabel'), defaultValue: f.name });
     if (!name || name === f.name) return;
     await api.patch(`/folders/${f.id}`, { name });
+    if (!isZk) pushUndo({ type: 'rename', kind: 'folder', id: f.id, from: f.name, to: name });
     await loadFolders();
   }
   function renameByKey(key: string) {
@@ -923,6 +995,7 @@ export default function EspacesPage() {
     if (dest === null) return;
     const target = dest === '__root__' ? null : dest;
     await api.patch(`/${kind}s/${id}`, { folderId: target, parentId: target });
+    if (!isZk) pushUndo({ type: 'move', moves: [{ kind, id, from: currentFolderId, to: target }] });
     await Promise.all([loadFolders(), reloadCurrent()]);
     toast(t('drive.moved'), 'success');
   }
@@ -974,6 +1047,13 @@ export default function EspacesPage() {
       else if (it.kind === 'file') await api.del(`/files/${it.file.id}`);
       else await api.del(`/zk/files/${it.zk.id}`);
     }
+    // Only non-ZK deletes go to the Trash and can be undone.
+    const undoable: { kind: 'file' | 'folder'; id: string }[] = [];
+    for (const it of items) {
+      if (it.kind === 'folder') undoable.push({ kind: 'folder', id: it.folder.id });
+      else if (it.kind === 'file') undoable.push({ kind: 'file', id: it.file.id });
+    }
+    if (undoable.length > 0) pushUndo({ type: 'trash', items: undoable });
     setSelected(new Set());
     await Promise.all([loadFolders(), reloadCurrent()]);
     toast(t('drive.bulkDeleted', { n: items.length }), 'success');
@@ -1017,6 +1097,12 @@ export default function EspacesPage() {
       if (it.kind === 'folder') await api.patch(`/folders/${it.folder.id}`, { parentId: target });
       else if (it.kind === 'file') await api.patch(`/files/${it.file.id}`, { folderId: target });
     }
+    const moves: { kind: 'file' | 'folder'; id: string; from: string | null; to: string | null }[] = [];
+    for (const it of items) {
+      if (it.kind === 'folder') moves.push({ kind: 'folder', id: it.folder.id, from: currentFolderId, to: target });
+      else if (it.kind === 'file') moves.push({ kind: 'file', id: it.file.id, from: currentFolderId, to: target });
+    }
+    if (moves.length > 0) pushUndo({ type: 'move', moves });
     setSelected(new Set());
     await Promise.all([loadFolders(), reloadCurrent()]);
     toast(t('drive.bulkMoved', { n: items.length }), 'success');
@@ -1323,6 +1409,17 @@ export default function EspacesPage() {
         e.preventDefault();
         void paste();
       }
+      return;
+    }
+    if (mod && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) void redo();
+      else void undo();
+      return;
+    }
+    if (mod && e.key.toLowerCase() === 'y') {
+      e.preventDefault();
+      void redo();
       return;
     }
     if (mod && e.key.toLowerCase() === 'd') {

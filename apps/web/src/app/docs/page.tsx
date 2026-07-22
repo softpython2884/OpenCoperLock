@@ -129,6 +129,7 @@ export default function DocsPage() {
           ul: [
             L('Bouton « Importer » (sélection multiple).', '“Import” button (multi-select).'),
             L('Glisser-déposer depuis le bureau, n’importe où sur la page (un grand overlay apparaît).', 'Drag-and-drop from the desktop anywhere on the page (a full-window overlay appears).'),
+            L('Coller (Ctrl/⌘ + V) une image ou du texte du presse-papier : le fichier est créé dans le dossier ouvert.', 'Paste (Ctrl/⌘ + V) an image or text from the clipboard: the file is created in the open folder.'),
             L('Création d’un fichier vide (texte/markdown) qui s’ouvre directement dans l’éditeur.', 'Create an empty (text/markdown) file that opens straight in the editor.'),
             L('Envoi en flux (streaming) : la taille réelle est limitée par votre quota, pas par la RAM.', 'Streaming upload: the real limit is your quota, not RAM.'),
           ],

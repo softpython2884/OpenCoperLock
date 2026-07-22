@@ -483,7 +483,7 @@ export default function EspacesPage() {
   }
 
   const onUpload = useCallback(
-    async (list: FileList | null) => {
+    async (list: FileList | File[] | null) => {
       if (!list || list.length === 0 || !currentFolderId) return;
       const arr = Array.from(list);
       setError(null);
@@ -565,6 +565,56 @@ export default function EspacesPage() {
       window.removeEventListener('drop', onDrop);
     };
   }, [activeSpaceId, needPass, onUpload]);
+
+  // Paste from the OS clipboard: Ctrl/⌘+V with an image or text on the clipboard drops it straight
+  // into the open folder. The in-app file clipboard (copy/cut of files) takes precedence and is
+  // handled on keydown; this only runs when there's nothing to move internally.
+  const onPaste = useCallback(
+    async (e: ClipboardEvent) => {
+      if (!activeSpaceId || !currentFolderId || needPass || busy || viewing || clipboard) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+      const dt = e.clipboardData;
+      if (!dt) return;
+
+      // A readable timestamp for auto-named pastes (no ':' — invalid in file names).
+      const stamp = () => {
+        const d = new Date();
+        const p = (n: number) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}h${p(d.getMinutes())}`;
+      };
+
+      // 1) Files / images on the clipboard (screenshots, copied image files).
+      const files: File[] = [];
+      for (const item of Array.from(dt.items)) {
+        if (item.kind !== 'file') continue;
+        const f = item.getAsFile();
+        if (!f) continue;
+        const named = f.name && /\.[a-z0-9]+$/i.test(f.name)
+          ? f
+          : new File([f], `Image collée ${stamp()}.${(f.type.split('/')[1] || 'png').split('+')[0]}`, { type: f.type || 'image/png' });
+        files.push(named);
+      }
+      if (files.length > 0) {
+        e.preventDefault();
+        await onUpload(files);
+        return;
+      }
+
+      // 2) Plain text → a .txt file.
+      const text = dt.getData('text/plain');
+      if (text && text.trim()) {
+        e.preventDefault();
+        await onUpload([new File([text], `Texte collé ${stamp()}.txt`, { type: 'text/plain' })]);
+      }
+    },
+    [activeSpaceId, currentFolderId, needPass, busy, viewing, clipboard, onUpload],
+  );
+  useEffect(() => {
+    const h = (e: ClipboardEvent) => void onPaste(e);
+    window.addEventListener('paste', h);
+    return () => window.removeEventListener('paste', h);
+  }, [onPaste]);
 
   function openFile(f: PublicFile) {
     setViewing({
@@ -1226,8 +1276,12 @@ export default function EspacesPage() {
       return;
     }
     if (mod && e.key.toLowerCase() === 'v') {
-      e.preventDefault();
-      void paste();
+      // Internal file clipboard (copy/cut) wins; otherwise let the native `paste` event handle an
+      // image/text sitting on the OS clipboard (see the onPaste handler).
+      if (clipboard) {
+        e.preventDefault();
+        void paste();
+      }
       return;
     }
     if (mod && e.key.toLowerCase() === 'd') {

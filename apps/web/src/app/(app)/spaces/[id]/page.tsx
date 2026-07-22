@@ -26,6 +26,7 @@ import {
   UserPlus,
   Settings2,
   LogOut,
+  Eye,
   File as FileIcon,
 } from 'lucide-react';
 import type {
@@ -41,6 +42,8 @@ import { useAuth } from '@/lib/auth';
 import { useT } from '@/lib/i18n';
 import { Select } from '@/components/ui/Select';
 import { FileViewer, type ViewerSource } from '@/components/FileViewer';
+import { ContextMenu } from '@/components/drive/ContextMenu';
+import type { MenuItem } from '@/components/ui/Menu';
 import { confirm, choose, prompt, toast } from '@/components/ui/overlays';
 
 export default function SpacePage() {
@@ -59,6 +62,7 @@ export default function SpacePage() {
   const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [showManage, setShowManage] = useState(false);
   const [viewing, setViewing] = useState<ViewerSource | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const canWrite = space ? space.myRole === 'OWNER' || space.myRole === 'EDITOR' : false;
@@ -208,6 +212,40 @@ export default function SpacePage() {
     } catch (err) {
       toast(err instanceof ApiError ? err.message : t('space.actionFailed'), 'error');
     }
+  }
+
+  // ── Right-click menus ──────────────────────────────────────────────────────
+  function fileMenu(f: PublicFile): MenuItem[] {
+    const items: MenuItem[] = [
+      { label: t('space.openFile'), icon: Eye, onClick: () => openFile(f) },
+      { label: t('space.download'), icon: Download, onClick: () => download(f) },
+    ];
+    if (canWrite) {
+      items.push({ label: t('space.rename'), icon: Pencil, onClick: () => void renameFile(f) });
+      items.push({ label: t('space.delete'), icon: Trash2, danger: true, onClick: () => void deleteFile(f) });
+    }
+    return items;
+  }
+  function folderMenu(f: PublicFolder): MenuItem[] {
+    const items: MenuItem[] = [{ label: t('space.openFile'), icon: FolderIcon, onClick: () => setCwd(f.id) }];
+    if (canWrite) {
+      items.push({ label: t('space.rename'), icon: Pencil, onClick: () => void renameFolder(f) });
+      items.push({ label: t('space.delete'), icon: Trash2, danger: true, onClick: () => void deleteFolder(f) });
+    }
+    return items;
+  }
+  function bgMenu(): MenuItem[] {
+    if (!canWrite) return [];
+    return [
+      { label: t('space.newFolder'), icon: FolderPlus, onClick: () => void newFolder() },
+      { label: t('space.upload'), icon: Upload, onClick: () => fileInput.current?.click() },
+    ];
+  }
+  function openCtx(ev: React.MouseEvent, items: MenuItem[]) {
+    if (items.length === 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    setCtxMenu({ x: ev.clientX, y: ev.clientY, items });
   }
 
   // ── Member & lifecycle actions ─────────────────────────────────────────────
@@ -427,14 +465,17 @@ export default function SpacePage() {
 
       {/* Listing */}
       {childFolders.length === 0 && files.length === 0 ? (
-        <div className="card flex flex-col items-center gap-2 py-14 text-center">
+        <div
+          className="card flex flex-col items-center gap-2 py-14 text-center"
+          onContextMenu={(ev) => openCtx(ev, bgMenu())}
+        >
           <span className="grid h-12 w-12 place-items-center rounded-2xl bg-white/[0.04] text-zinc-500"><FolderIcon size={22} /></span>
           <p className="text-sm text-zinc-400">{t('space.emptyFolder')}</p>
         </div>
       ) : (
-        <div className="space-y-1.5">
+        <div className="space-y-1.5" onContextMenu={(ev) => openCtx(ev, bgMenu())}>
           {childFolders.map((f) => (
-            <div key={f.id} className="row">
+            <div key={f.id} className="row" onContextMenu={(ev) => openCtx(ev, folderMenu(f))}>
               <button className="flex min-w-0 items-center gap-3" onClick={() => setCwd(f.id)}>
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white/[0.05] text-amber-200"><FolderIcon size={16} /></span>
                 <span className="truncate font-medium text-zinc-100">{f.name}</span>
@@ -448,7 +489,7 @@ export default function SpacePage() {
             </div>
           ))}
           {files.map((f) => (
-            <div key={f.id} className="row">
+            <div key={f.id} className="row" onContextMenu={(ev) => openCtx(ev, fileMenu(f))}>
               <button className="flex min-w-0 items-center gap-3 text-left" onClick={() => openFile(f)} title={t('space.openFile')}>
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-violet-300"><FileIcon size={16} /></span>
                 <div className="min-w-0">
@@ -471,6 +512,7 @@ export default function SpacePage() {
       )}
 
       {viewing && <FileViewer source={viewing} onClose={() => setViewing(null)} />}
+      {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxMenu.items} onClose={() => setCtxMenu(null)} />}
     </div>
   );
 }

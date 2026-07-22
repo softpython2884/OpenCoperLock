@@ -167,12 +167,37 @@ curl -u "me:ocl_YOUR_TOKEN" -X PROPFIND -H "Depth: 1" https://<host>/api/dav/
 
 ### Windows Explorer
 
-Windows' built-in WebDAV client is strict:
+Windows' built-in WebDAV client (the *WebClient* / Mini-Redirector service) is strict and its
+errors are misleading — **`0x80070043` "The network name cannot be found"** almost always means
+Windows never completed the WebDAV handshake, **not** that the server is down. Work through these
+in order:
 
-- Use **HTTPS** (you do) and make sure the **WebClient** service is running (`services.msc`).
-- Windows often refuses Basic auth even over HTTPS until you set, in
-  `HKLM\SYSTEM\CurrentControlSet\Services\WebClient\Parameters`, the DWORD
-  **`BasicAuthLevel = 2`**, then restart the WebClient service.
-- If it still won't map, test with **rclone**, **Cyberduck** or **WinSCP** first — if those work,
-  it's a Windows-client limitation, not the server.
+1. **Never use a `\\host\…` UNC path for an internet server.** `\\copper.forgenet.fr\api\dav\`
+   makes Windows try **SMB (port 445)** first, which is blocked over the internet → `0x80070043`.
+   Either:
+   - **Map network drive** with the plain URL `https://copper.forgenet.fr/api/dav/`, **or**
+   - if you must use a UNC path, use the SSL WebDAV form:
+     `\\copper.forgenet.fr@SSL\api\dav\` (add `@443` after `@SSL` if you run on a non-standard port).
+2. **Make sure the WebClient service is running and restart it.** It caches a "this server isn't
+   WebDAV" verdict after any failed attempt — which is exactly why it works *sometimes*. Clearing
+   that cache fixes most intermittent failures. In an **admin** PowerShell / CMD:
+   ```
+   net stop webclient & net start webclient
+   ```
+   (Set its startup type to *Automatic* in `services.msc` so it's always up.)
+3. **Allow Basic auth over HTTPS.** Windows refuses Basic even over TLS until you set, in
+   `HKLM\SYSTEM\CurrentControlSet\Services\WebClient\Parameters`, the DWORD
+   **`BasicAuthLevel = 2`**, then restart WebClient (step 2).
+4. **Raise the download size cap.** Windows refuses files larger than **50 MB** over WebDAV by
+   default. In the same `Parameters` key set the DWORD **`FileSizeLimitInBytes`** to e.g.
+   `4294967295` (≈4 GB, the max) and restart WebClient.
+5. **Credentials:** leave the username as anything (it's ignored) and paste your **`ocl_…` API
+   token as the password**. Use an *unrestricted* token — folder-scoped tokens are refused.
+6. If it still won't map, prove it's Windows and not the server by testing with **rclone**,
+   **Cyberduck** or **WinSCP** — if those connect (they will), it's purely a Windows-client quirk.
+   You can also confirm the server from any machine:
+   ```bash
+   curl -u "me:ocl_YOUR_TOKEN" -X PROPFIND -H "Depth: 1" https://copper.forgenet.fr/api/dav/
+   ```
+   A `207 Multi-Status` with XML = the server and proxy are perfect; the ball is in Windows' court.
 </content>

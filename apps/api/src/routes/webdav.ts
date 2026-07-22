@@ -158,20 +158,27 @@ export const webdavRoutes: FastifyPluginAsync = async (app) => {
   }
 
   async function handle(req: FastifyRequest, reply: FastifyReply) {
+    const method = req.method;
+
+    // Advertise WebDAV capability on EVERY OPTIONS — including the unauthenticated probe Windows'
+    // Mini-Redirector sends first. Setting DAV/MS-Author-Via/Allow before the auth challenge means
+    // Windows recognises the server as WebDAV on that first request (otherwise it only learns this
+    // on a second, authenticated round-trip, which is a common source of "this isn't a WebDAV
+    // site" / 0x80070043 flakiness). No user data is exposed — these are static capabilities.
+    if (method === 'OPTIONS') {
+      reply
+        .header('DAV', '1, 2')
+        .header('MS-Author-Via', 'DAV')
+        .header('Allow', 'OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, PROPPATCH, MKCOL, MOVE, COPY, LOCK, UNLOCK');
+      const principal = await auth(req, reply);
+      if (!principal) return; // 401 challenge, now carrying the DAV headers above
+      return reply.code(204).send();
+    }
+
     const principal = await auth(req, reply);
     if (!principal) return;
     const ownerId = principal.ownerId;
     const segments = pathSegments((req.params as Record<string, string>)['*']);
-    const method = req.method;
-
-    if (method === 'OPTIONS') {
-      return reply
-        .header('DAV', '1, 2')
-        .header('MS-Author-Via', 'DAV')
-        .header('Allow', 'OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, PROPPATCH, MKCOL, MOVE, COPY, LOCK, UNLOCK')
-        .code(204)
-        .send();
-    }
 
     const node = await resolvePath(ownerId, segments);
 

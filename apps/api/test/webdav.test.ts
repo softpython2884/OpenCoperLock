@@ -49,10 +49,14 @@ describe('webdav routing (boot smoke-test)', () => {
 
   // No auth header → challenge BEFORE any DB access. Proves the custom methods are routed and
   // that WebDAV sits outside the CORS scope (otherwise OPTIONS would be 400/204 from cors).
-  it('challenges an unauthenticated OPTIONS /dav', async () => {
+  // The 401 still carries the DAV capability headers so Windows' Mini-Redirector detects WebDAV
+  // on its first, unauthenticated probe.
+  it('challenges an unauthenticated OPTIONS /dav but advertises DAV capability', async () => {
     const res = await app.inject({ method: 'OPTIONS', url: '/dav' });
     expect(res.statusCode).toBe(401);
     expect(String(res.headers['www-authenticate'])).toContain('Basic');
+    expect(String(res.headers['dav'])).toContain('1');
+    expect(String(res.headers['ms-author-via'])).toBe('DAV');
   });
 
   it('routes the custom PROPFIND verb', async () => {

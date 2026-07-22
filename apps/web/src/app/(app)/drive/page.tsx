@@ -78,6 +78,7 @@ import { CommandPalette, type PaletteItem } from '@/components/drive/CommandPale
 import { ShortcutsHelp } from '@/components/drive/ShortcutsHelp';
 import { VersionHistory } from '@/components/drive/VersionHistory';
 import { ContextMenu } from '@/components/drive/ContextMenu';
+import { FolderPicker } from '@/components/drive/FolderPicker';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 
 interface ZkFile {
@@ -146,6 +147,11 @@ export default function EspacesPage() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const [movePicker, setMovePicker] = useState<{
+    items: { kind: 'file' | 'folder'; id: string }[];
+    exclude: Set<string>;
+    currentId: string | null;
+  } | null>(null);
 
   // passphrase prompt
   const [askPass, setAskPass] = useState<PublicFolder | null>(null);
@@ -983,21 +989,42 @@ export default function EspacesPage() {
     if (entry.kind === 'folder') void renameFolder(entry.folder);
     else if (entry.kind === 'file') void renameFile(entry.file);
   }
-  async function move(kind: 'file' | 'folder', id: string) {
-    const targets = [
-      { id: null as string | null, name: t('drive.spaceRoot') },
-      ...allFolders.filter((f) => f.id !== id && f.isZeroKnowledge === isZk),
-    ];
-    const dest = await choose<string | '__root__'>({
-      title: t('drive.moveTitle'),
-      options: targets.map((tg) => ({ value: tg.id ?? '__root__', label: tg.name })),
+  /** A folder's id plus all its descendants — excluded as move destinations (no cycles). */
+  function folderSubtree(id: string): Set<string> {
+    const out = new Set<string>([id]);
+    const stack = [id];
+    while (stack.length) {
+      const p = stack.pop()!;
+      for (const f of allFolders) if (f.parentId === p && !out.has(f.id)) { out.add(f.id); stack.push(f.id); }
+    }
+    return out;
+  }
+  function move(kind: 'file' | 'folder', id: string) {
+    setMovePicker({
+      items: [{ kind, id }],
+      exclude: kind === 'folder' ? folderSubtree(id) : new Set<string>(),
+      currentId: currentFolderId,
     });
-    if (dest === null) return;
-    const target = dest === '__root__' ? null : dest;
-    await api.patch(`/${kind}s/${id}`, { folderId: target, parentId: target });
-    if (!isZk) pushUndo({ type: 'move', moves: [{ kind, id, from: currentFolderId, to: target }] });
-    await Promise.all([loadFolders(), reloadCurrent()]);
-    toast(t('drive.moved'), 'success');
+  }
+  // Perform the pending move once a destination is chosen in the FolderPicker.
+  async function performMove(target: string) {
+    const picker = movePicker;
+    setMovePicker(null);
+    if (!picker) return;
+    try {
+      const moves: { kind: 'file' | 'folder'; id: string; from: string | null; to: string | null }[] = [];
+      for (const it of picker.items) {
+        if (it.kind === 'folder') await api.patch(`/folders/${it.id}`, { parentId: target });
+        else await api.patch(`/files/${it.id}`, { folderId: target });
+        moves.push({ kind: it.kind, id: it.id, from: picker.currentId, to: target });
+      }
+      if (!isZk && moves.length > 0) pushUndo({ type: 'move', moves });
+      setSelected(new Set());
+      await Promise.all([loadFolders(), reloadCurrent()]);
+      toast(moves.length > 1 ? t('drive.bulkMoved', { n: moves.length }) : t('drive.moved'), 'success');
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : t('common.opFailed'), 'error');
+    }
   }
   async function share(kind: 'file' | 'folder', id: string) {
     const accessMode = await choose<'PUBLIC' | 'CODE' | 'AUTHENTICATED'>({
@@ -1079,33 +1106,20 @@ export default function EspacesPage() {
       if (blob) saveBlob(blob, zkName(it.zk));
     }
   }
-  async function bulkMove() {
+  function bulkMove() {
     const items = entriesByKeys([...selected]).filter((e) => e.kind !== 'zk');
     if (items.length === 0) return;
-    const selfIds = new Set(items.map((e) => (e.kind === 'folder' ? e.folder.id : '')));
-    const targets = [
-      { id: null as string | null, name: t('drive.spaceRoot') },
-      ...allFolders.filter((f) => f.isZeroKnowledge === isZk && !selfIds.has(f.id)),
-    ];
-    const dest = await choose<string | '__root__'>({
-      title: t('drive.moveTitle'),
-      options: targets.map((tg) => ({ value: tg.id ?? '__root__', label: tg.name })),
-    });
-    if (dest === null) return;
-    const target = dest === '__root__' ? null : dest;
+    const moveItems: { kind: 'file' | 'folder'; id: string }[] = [];
+    const exclude = new Set<string>();
     for (const it of items) {
-      if (it.kind === 'folder') await api.patch(`/folders/${it.folder.id}`, { parentId: target });
-      else if (it.kind === 'file') await api.patch(`/files/${it.file.id}`, { folderId: target });
+      if (it.kind === 'folder') {
+        moveItems.push({ kind: 'folder', id: it.folder.id });
+        for (const x of folderSubtree(it.folder.id)) exclude.add(x);
+      } else if (it.kind === 'file') {
+        moveItems.push({ kind: 'file', id: it.file.id });
+      }
     }
-    const moves: { kind: 'file' | 'folder'; id: string; from: string | null; to: string | null }[] = [];
-    for (const it of items) {
-      if (it.kind === 'folder') moves.push({ kind: 'folder', id: it.folder.id, from: currentFolderId, to: target });
-      else if (it.kind === 'file') moves.push({ kind: 'file', id: it.file.id, from: currentFolderId, to: target });
-    }
-    if (moves.length > 0) pushUndo({ type: 'move', moves });
-    setSelected(new Set());
-    await Promise.all([loadFolders(), reloadCurrent()]);
-    toast(t('drive.bulkMoved', { n: items.length }), 'success');
+    setMovePicker({ items: moveItems, exclude, currentId: currentFolderId });
   }
 
   // ── Clipboard (normal spaces only) ───────────────────────────────────────────
@@ -1849,6 +1863,18 @@ export default function EspacesPage() {
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
       {viewing && <FileViewer source={viewing} onClose={() => setViewing(null)} />}
       {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxMenu.items} onClose={() => setCtxMenu(null)} />}
+      {movePicker && activeSpace && (
+        <FolderPicker
+          folders={allFolders}
+          rootId={activeSpace.id}
+          rootName={activeSpace.name}
+          excludeIds={movePicker.exclude}
+          currentId={movePicker.currentId}
+          count={movePicker.items.length}
+          onPick={performMove}
+          onClose={() => setMovePicker(null)}
+        />
+      )}
       <DropOverlay show={dragging} />
     </div>
   );

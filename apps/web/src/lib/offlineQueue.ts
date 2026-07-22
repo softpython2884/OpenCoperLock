@@ -1,20 +1,34 @@
 /**
- * IndexedDB-backed queue of files picked while offline. Each item keeps the file blob and the
- * chosen destination; the OfflineProvider flushes them (uploads + removes) when the network
- * returns. Blobs live in IndexedDB so they survive a reload/restart while offline.
+ * IndexedDB-backed queue of pending uploads. It holds two kinds of items: files picked while
+ * offline, and uploads that FAILED while online (network drop, server error, or not-enough-space).
+ * The OfflineProvider retries them with backoff and clears each on success. Blobs live in
+ * IndexedDB so a queued upload survives a reload/restart.
  */
 const DB_NAME = 'ocl-offline';
 const STORE = 'queue';
+
+/** 'pending' = will be retried automatically; 'blocked' = paused (needs free space, or the target
+ *  is gone) and only a manual retry will move it. */
+export type QueueStatus = 'pending' | 'blocked';
 
 export interface QueuedItem {
   id?: number;
   blob: Blob;
   name: string;
   type: string;
+  /** Byte size, kept so the UI can show it without touching the blob. */
+  size: number;
   /** Target folder id, or '' to let the flush pick the Fast-Upload folder. */
   folderId: string;
   folderName: string;
   createdAt: number;
+  status: QueueStatus;
+  /** Number of upload attempts so far. */
+  attempts: number;
+  /** Earliest time (ms) the next automatic retry may run (backoff). */
+  nextRetryAt: number;
+  /** Human-readable last failure reason, shown in the transfers panel. */
+  lastError?: string;
 }
 
 function openDb(): Promise<IDBDatabase> {
@@ -46,6 +60,10 @@ export function enqueue(item: Omit<QueuedItem, 'id'>): Promise<number> {
 
 export function allQueued(): Promise<QueuedItem[]> {
   return tx<QueuedItem[]>('readonly', (s) => s.getAll());
+}
+
+export function updateQueued(item: QueuedItem): Promise<void> {
+  return tx<void>('readwrite', (s) => s.put(item));
 }
 
 export function removeQueued(id: number): Promise<void> {

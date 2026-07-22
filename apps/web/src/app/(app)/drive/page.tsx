@@ -119,8 +119,8 @@ function passKey(spaceId: string) {
 }
 
 export default function EspacesPage() {
-  const { refresh } = useAuth();
-  const { online } = useOffline();
+  const { user, refresh } = useAuth();
+  const { online, enqueueForRetry } = useOffline();
   const { t } = useT();
   const [allFolders, setAllFolders] = useState<PublicFolder[]>([]);
   const [activeSpaceId, setActiveSpaceId] = useState<string | null>(null);
@@ -508,13 +508,45 @@ export default function EspacesPage() {
             await api.upload('/zk/files', form);
           }
         } else {
+          // Server-side upload with a space pre-check and a resilient fallback: a file that won't
+          // fit is PAUSED (never attempted) and one that fails mid-flight is handed to the
+          // background retry queue — so a big upload survives a hiccup instead of being lost.
+          const spaceName = activeSpace?.name ?? '';
+          let remaining = user?.quotaBytes != null ? user.quotaBytes - user.usedBytes : Infinity;
+          let uploaded = 0;
           for (let i = 0; i < arr.length; i += 1) {
+            const f = arr[i]!;
+            if (Number.isFinite(remaining) && f.size > remaining) {
+              await enqueueForRetry(f, currentFolderId, spaceName, {
+                blocked: true,
+                error: t('offline.errNoSpacePre', { need: formatBytes(f.size), free: formatBytes(Math.max(0, remaining)) }),
+              });
+              toast(t('drive.uploadPausedSpace', { name: f.name }), 'info');
+              continue;
+            }
             setBusy(t('drive.uploading', { i: i + 1, n: arr.length }));
             setProgress(0);
             const form = new FormData();
-            form.append('file', arr[i]!);
-            await api.uploadWithProgress(`/files?folderId=${currentFolderId}`, form, setProgress);
+            form.append('file', f);
+            try {
+              await api.uploadWithProgress(`/files?folderId=${currentFolderId}`, form, setProgress);
+              remaining -= f.size;
+              uploaded += 1;
+            } catch (err) {
+              const status = err instanceof ApiError ? err.status : 0;
+              const blocked = status === 413 || status === 507;
+              await enqueueForRetry(f, currentFolderId, spaceName, {
+                blocked,
+                error: err instanceof ApiError ? err.message : t('offline.errNetwork'),
+              });
+              toast(blocked ? t('drive.uploadPausedSpace', { name: f.name }) : t('drive.uploadQueuedRetry', { name: f.name }), 'info');
+            }
           }
+          await Promise.all([loadItems(currentFolderId, isZk, vaultKey), refresh()]);
+          if (uploaded > 0) {
+            toast(uploaded > 1 ? t('drive.filesImportedMany', { n: uploaded }) : t('drive.filesImportedOne', { n: uploaded }), 'success');
+          }
+          return;
         }
         await Promise.all([loadItems(currentFolderId, isZk, vaultKey), refresh()]);
         toast(arr.length > 1 ? t('drive.filesImportedMany', { n: arr.length }) : t('drive.filesImportedOne', { n: arr.length }), 'success');
@@ -526,7 +558,7 @@ export default function EspacesPage() {
         if (fileInput.current) fileInput.current.value = '';
       }
     },
-    [currentFolderId, isZk, vaultKey, loadItems, refresh, t],
+    [currentFolderId, isZk, vaultKey, loadItems, refresh, t, user, enqueueForRetry, activeSpace],
   );
 
   // Full-window drag & drop: a drop anywhere over the page uploads into the open folder.
@@ -691,6 +723,15 @@ export default function EspacesPage() {
   async function reloadCurrent() {
     if (currentFolderId) await Promise.all([loadItems(currentFolderId, isZk, vaultKey), refresh()]);
   }
+
+  // Refresh the open folder when a background (retry) upload lands, so the file appears.
+  const reloadCurrentRef = useRef(reloadCurrent);
+  reloadCurrentRef.current = reloadCurrent;
+  useEffect(() => {
+    const h = () => void reloadCurrentRef.current();
+    window.addEventListener('ocl:queue-flushed', h);
+    return () => window.removeEventListener('ocl:queue-flushed', h);
+  }, []);
 
   // ── Selection ───────────────────────────────────────────────────────────────
   function toggleKey(key: string) {

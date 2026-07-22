@@ -69,7 +69,7 @@ import {
   makeVerifier,
   randomSalt,
 } from '@/lib/zk';
-import { fileVisual } from '@/lib/fileType';
+import { fileVisual, previewKind } from '@/lib/fileType';
 import { signalDownload } from '@/lib/downloadFx';
 import { FileViewer, type ViewerSource } from '@/components/FileViewer';
 import { confirm, prompt, choose, toast } from '@/components/ui/overlays';
@@ -1743,11 +1743,33 @@ export default function EspacesPage() {
 
 // ── Small presentational helpers ──────────────────────────────────────────────
 
+/** Grid thumbnail: shows the actual image for image files (server-served, not ZK), with a
+ *  graceful fallback to the type icon on error. `?preview=1` keeps it out of the audit log. */
+function Thumb({ src, fallback }: { src: string; fallback: React.ReactNode }) {
+  const [err, setErr] = useState(false);
+  if (err) return <>{fallback}</>;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      onError={() => setErr(true)}
+      className="h-16 w-16 rounded-lg object-cover ring-1 ring-white/10"
+    />
+  );
+}
+
 function cardIcon(e: Entry, isZk: boolean) {
   if (e.kind === 'folder') return isZk ? <FolderLock size={30} className="text-violet-300" /> : <Folder size={30} className="text-zinc-400" />;
   if (e.kind === 'zk') return <Lock size={30} className="text-violet-300" />;
   const v = fileVisual(e.file.name, e.file.mimeType);
-  return <v.Icon size={30} className={v.color} />;
+  const icon = <v.Icon size={30} className={v.color} />;
+  // Image files get a real thumbnail (server-decrypted / plaintext for public); others the icon.
+  if (previewKind(e.file.name, e.file.mimeType) === 'image') {
+    return <Thumb src={api.url(`/files/${e.file.id}/download?preview=1`)} fallback={icon} />;
+  }
+  return icon;
 }
 function rowIcon(e: Entry, isZk: boolean) {
   if (e.kind === 'folder') return isZk ? <FolderLock size={18} className="text-violet-300" /> : <Folder size={18} className="text-zinc-400" />;

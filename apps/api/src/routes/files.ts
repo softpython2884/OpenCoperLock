@@ -95,9 +95,12 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  // GET /files/:id/download — decrypt and stream a SERVER-mode file.
+  // GET /files/:id/download — decrypt and stream a SERVER-mode file. `?preview=1` is used for
+  // inline previews / grid thumbnails and is NOT audited (so a folder of images doesn't flood the
+  // audit log with one download entry per tile).
   app.get('/:id/download', async (req, reply) => {
     const { id } = req.params as { id: string };
+    const { preview } = req.query as { preview?: string };
     const file = await prisma.fileObject.findFirst({
       where: { id, ownerId: req.user!.id, spaceId: null },
     });
@@ -106,7 +109,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send({ error: 'Zero-Knowledge files are fetched via the vault API' });
     }
 
-    await audit(req, 'file.download', { target: file.id });
+    if (preview !== '1') await audit(req, 'file.download', { target: file.id });
     reply
       .header('Content-Type', file.mimeType)
       .header('Content-Length', Number(file.sizeBytes))

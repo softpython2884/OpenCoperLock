@@ -19,6 +19,7 @@ import { shareRoutes } from './routes/shares.js';
 import { spaceRoutes } from './routes/spaces.js';
 import { versionRoutes } from './routes/version.js';
 import { sharePublicRoutes } from './routes/share-public.js';
+import { publicMediaRoutes } from './routes/public-media.js';
 import { twoFactorRoutes } from './routes/twofa.js';
 import { accountRoutes } from './routes/account.js';
 import { adminRoutes } from './routes/admin.js';
@@ -72,6 +73,10 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   // WebDAV is mounted OUTSIDE the CORS scope below: @fastify/cors uses strictPreflight and would
   // answer every WebDAV OPTIONS with 400/204, hiding the DAV capability headers clients need.
   await app.register(webdavRoutes, { prefix: '/dav' });
+
+  // Public media (Public/Open spaces) is also mounted outside the browser CORS scope so its own
+  // wildcard `Access-Control-Allow-Origin: *` (for embedding on any site) isn't overridden.
+  await app.register(publicMediaRoutes, { prefix: '/p' });
 
   // Everything browser-facing is wrapped so CORS applies only here (not to WebDAV).
   await app.register(async (web) => {

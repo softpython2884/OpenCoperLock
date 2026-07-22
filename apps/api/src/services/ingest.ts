@@ -111,3 +111,34 @@ export async function ingestPlaintext(
     await cleanup();
   }
 }
+
+export interface PublicIngestResult {
+  storageKey: string;
+  sizeBytes: number;
+  sha256: string;
+  avStatus: AvStatus;
+}
+
+/**
+ * Ingest for a Public/Open space: spool + antivirus-scan, then store the bytes as PLAINTEXT (no
+ * encryption). This is deliberate — public media must be range-servable and load fast, which
+ * AES-GCM ciphertext (non-seekable, verify-on-final) can't do. Still scanned so a public URL
+ * can't be turned into malware hosting.
+ */
+export async function ingestPublic(
+  ctx: AppContext,
+  source: Readable,
+  opts: { maxBytes: number; storageKey: string },
+): Promise<PublicIngestResult> {
+  const { path, cleanup, sizeBytes, sha256 } = await spool(source, opts.maxBytes);
+  try {
+    const scan = await ctx.scanner.scanStream(createReadStream(path));
+    if (scan.status === 'INFECTED') {
+      throw new InfectedFileError(scan.signature ?? 'unknown');
+    }
+    await ctx.storage.write(opts.storageKey, createReadStream(path));
+    return { storageKey: opts.storageKey, sizeBytes, sha256, avStatus: scan.status };
+  } finally {
+    await cleanup();
+  }
+}

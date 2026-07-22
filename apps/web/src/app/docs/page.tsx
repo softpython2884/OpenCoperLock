@@ -101,6 +101,15 @@ export default function DocsPage() {
           ],
         },
         { warn: L('La phrase de passe d’un coffre est IRRÉCUPÉRABLE. Si vous l’oubliez, le contenu est définitivement perdu — personne ne peut le déchiffrer.', 'A vault passphrase is UNRECOVERABLE. If you forget it, the contents are lost forever — nobody can decrypt them.') },
+        { h: L('Espace public / ouvert', 'Public / Open space') },
+        {
+          ul: [
+            L('Chaque fichier obtient une URL directe et publique (/p/<code>) — idéale pour intégrer des images/vidéos sur d’autres sites.', 'Each file gets a direct, public URL (/p/<code>) — ideal for embedding images/videos on other sites.'),
+            L('Stocké en clair (non chiffré) pour charger le plus vite possible ; supporte les requêtes de plage (seek vidéo) et un cache long.', 'Stored as plaintext (unencrypted) to load as fast as possible; supports range requests (video seeking) and long caching.'),
+            L('Bouton « Copier l’URL publique » sur chaque fichier. Les fichiers restent scannés par l’antivirus à l’envoi.', '“Copy public URL” on each file. Files are still antivirus-scanned on upload.'),
+          ],
+        },
+        { warn: L('Un espace public n’est PAS chiffré et TOUT le monde avec l’URL peut voir le fichier. À réserver aux médias que vous assumez publics.', 'A public space is NOT encrypted and ANYONE with the URL can view the file. Use it only for media you intend to be public.') },
         { h: L('Gérer un espace', 'Managing a space') },
         {
           ul: [

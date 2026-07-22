@@ -68,6 +68,7 @@ export function toPublicFolder(f: Folder): PublicFolder {
     name: f.name,
     parentId: f.parentId,
     isZeroKnowledge: f.isZeroKnowledge,
+    isPublic: f.isPublic,
     zkSalt: f.zkSalt,
     zkVerifier: f.zkVerifier,
     createdAt: f.createdAt.toISOString(),
@@ -86,6 +87,7 @@ export function toPublicFile(f: FileObject): PublicFile {
     encMode: f.encMode,
     avStatus: f.avStatus,
     sha256: f.sha256,
+    publicSlug: f.publicSlug,
     createdAt: f.createdAt.toISOString(),
   };
 }

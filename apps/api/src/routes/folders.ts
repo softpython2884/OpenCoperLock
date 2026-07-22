@@ -37,14 +37,23 @@ export const folderRoutes: FastifyPluginAsync = async (app) => {
     const body = parseOr400(reply, createFolderSchema, req.body);
     if (!body) return;
 
+    // A subfolder inherits its parent's space type (ZK / Public), so you can't mix modes in a tree.
+    let inheritZk = false;
+    let inheritPublic = false;
     if (body.parentId) {
       const parent = await prisma.folder.findFirst({
         where: { id: body.parentId, ownerId: req.user!.id, spaceId: null },
       });
       if (!parent) return reply.code(404).send({ error: 'Parent folder not found' });
+      inheritZk = parent.isZeroKnowledge;
+      inheritPublic = parent.isPublic;
     }
 
-    const isZk = body.isZeroKnowledge ?? false;
+    const isZk = inheritPublic ? false : (body.isZeroKnowledge ?? false) || inheritZk;
+    const isPublic = inheritZk ? false : (body.isPublic ?? false) || inheritPublic;
+    if (isZk && isPublic) {
+      return reply.code(400).send({ error: 'A space cannot be both Zero-Knowledge and Public' });
+    }
     try {
       const folder = await prisma.folder.create({
         data: {
@@ -52,6 +61,7 @@ export const folderRoutes: FastifyPluginAsync = async (app) => {
           parentId: body.parentId ?? null,
           name: body.name,
           isZeroKnowledge: isZk,
+          isPublic,
           // Per-vault salt: prefer the client's (so it can derive the key before the round-trip),
           // else a fresh server one. Independent per vault either way.
           zkSalt: isZk ? (body.zkSalt ?? randomToken(16)) : null,

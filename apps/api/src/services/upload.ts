@@ -7,8 +7,9 @@ import type { Readable } from 'node:stream';
 import type { FileObject } from '@prisma/client';
 import { prisma } from '../db.js';
 import type { AppContext } from '../context.js';
+import { randomToken } from '@opencoperlock/shared';
 import { newStorageKey } from '../storage/index.js';
-import { ingestPlaintext } from './ingest.js';
+import { ingestPlaintext, ingestPublic } from './ingest.js';
 import { adjustUsage, remainingAllowance } from './quota.js';
 import { findVersionTarget, isVersionable, pruneVersions, snapshotVersion } from './versioning.js';
 import { dispatchFileEvent } from './webhooks.js';
@@ -27,6 +28,8 @@ export interface StoreFileOpts {
   mimetype: string;
   /** When set, the file belongs to a Shared Space (ownerId is the space owner, who is billed). */
   spaceId?: string | null;
+  /** When true, store PLAINTEXT (Public/Open space) and mint a public URL slug. */
+  public?: boolean;
 }
 
 export interface StoreFileResult {
@@ -41,6 +44,29 @@ export async function storeUserFile(ctx: AppContext, opts: StoreFileOpts): Promi
 
   const storageKey = newStorageKey();
   try {
+    // Public/Open space: store plaintext, no versioning, mint a stable URL slug.
+    if (opts.public) {
+      const result = await ingestPublic(ctx, opts.stream, { maxBytes: allowance, storageKey });
+      const file = await prisma.fileObject.create({
+        data: {
+          ownerId: opts.ownerId,
+          folderId: opts.folderId,
+          spaceId: opts.spaceId ?? null,
+          name: opts.filename,
+          sizeBytes: BigInt(result.sizeBytes),
+          mimeType: opts.mimetype,
+          storageKey: result.storageKey,
+          encMode: 'PUBLIC',
+          publicSlug: randomToken(9), // ~12 url-safe chars
+          sha256: result.sha256,
+          avStatus: result.avStatus,
+        },
+      });
+      await adjustUsage(opts.ownerId, result.sizeBytes);
+      void dispatchFileEvent(opts.ownerId, file, 'file.created');
+      return { file, versioned: false };
+    }
+
     const result = await ingestPlaintext(ctx, opts.stream, { maxBytes: allowance, storageKey });
 
     const spaceId = opts.spaceId ?? null;

@@ -36,6 +36,8 @@ import {
   ChevronDown,
   Home,
   Lock,
+  Globe,
+  Link2,
   ShieldCheck,
   KeyRound,
   Eye,
@@ -187,7 +189,19 @@ export default function EspacesPage() {
     [allFolders, activeSpaceId],
   );
   const isZk = activeSpace?.isZeroKnowledge ?? false;
+  const isPublic = activeSpace?.isPublic ?? false;
   const needPass = isZk && !vaultKey;
+
+  /** Public URL for a file in a Public/Open space (empty if the file isn't public yet). */
+  function publicUrl(f: PublicFile): string {
+    return f.publicSlug ? `${API_URL}/p/${f.publicSlug}/${encodeURIComponent(f.name)}` : '';
+  }
+  async function copyPublicUrl(f: PublicFile) {
+    const url = publicUrl(f);
+    if (!url) return;
+    await navigator.clipboard?.writeText(url).catch(() => {});
+    toast(t('drive.publicUrlCopied'), 'success');
+  }
   const childFolders = useMemo(
     () => allFolders.filter((f) => f.parentId === currentFolderId),
     [allFolders, currentFolderId],
@@ -366,15 +380,27 @@ export default function EspacesPage() {
   async function createSpace() {
     const name = await prompt({ title: t('drive.newSpaceTitle'), label: t('drive.spaceNameLabel'), placeholder: t('drive.spaceNamePlaceholder') });
     if (!name) return;
-    const kind = await choose<'normal' | 'secured'>({
+    const kind = await choose<'normal' | 'secured' | 'public'>({
       title: t('drive.spaceTypeTitle'),
       message: t('drive.spaceTypeMsg'),
       options: [
         { value: 'normal', label: t('drive.spaceNormal'), description: t('drive.spaceNormalDesc') },
         { value: 'secured', label: t('drive.spaceSecured'), description: t('drive.spaceSecuredDesc') },
+        { value: 'public', label: t('drive.spacePublic'), description: t('drive.spacePublicDesc') },
       ],
     });
     if (!kind) return;
+
+    if (kind === 'public') {
+      try {
+        await api.post('/folders', { name, isPublic: true });
+        await loadFolders();
+        toast(t('drive.publicSpaceCreated'), 'success');
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : t('common.createFailed'));
+      }
+      return;
+    }
 
     if (kind === 'secured') {
       const pass = await prompt({
@@ -1087,6 +1113,17 @@ export default function EspacesPage() {
     ];
   }
   function fileMenuItems(file: PublicFile): MenuItem[] {
+    if (isPublic) {
+      // Public/Open space: the point is the direct URL, so lead with it. No versions (media isn't
+      // versioned); ZK-only features don't apply.
+      return [
+        { label: t('drive.copyPublicUrl'), icon: Link2, onClick: () => void copyPublicUrl(file) },
+        { label: t('drive.openPublicUrl'), icon: Eye, onClick: () => window.open(publicUrl(file), '_blank') },
+        { label: t('drive.actionRename'), icon: Pencil, onClick: () => void renameFile(file) },
+        { label: t('drive.actionMove'), icon: FolderInput, onClick: () => void move('file', file.id) },
+        { label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => void deleteFile(file.id) },
+      ];
+    }
     return [
       { label: t('drive.actionRename'), icon: Pencil, onClick: () => void renameFile(file) },
       { label: t('drive.actionMove'), icon: FolderInput, onClick: () => void move('file', file.id) },
@@ -1351,14 +1388,20 @@ export default function EspacesPage() {
                 <button onClick={() => enterSpace(s)} className="flex min-w-0 flex-1 items-center gap-4 text-left">
                   <span
                     className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl ${
-                      s.isZeroKnowledge ? 'bg-gradient-to-br from-violet-500/30 to-fuchsia-500/20 text-violet-200' : 'bg-white/[0.05] text-zinc-300'
+                      s.isZeroKnowledge
+                        ? 'bg-gradient-to-br from-violet-500/30 to-fuchsia-500/20 text-violet-200'
+                        : s.isPublic
+                          ? 'bg-gradient-to-br from-sky-500/25 to-emerald-500/15 text-sky-200'
+                          : 'bg-white/[0.05] text-zinc-300'
                     }`}
                   >
-                    {s.isZeroKnowledge ? <ShieldCheck size={22} /> : <Folder size={22} />}
+                    {s.isZeroKnowledge ? <ShieldCheck size={22} /> : s.isPublic ? <Globe size={22} /> : <Folder size={22} />}
                   </span>
                   <div className="min-w-0">
                     <p className="truncate font-medium text-zinc-100">{s.name}</p>
-                    <p className="text-xs text-zinc-500">{s.isZeroKnowledge ? t('drive.secured') : t('drive.normalSpace')}</p>
+                    <p className="text-xs text-zinc-500">
+                      {s.isZeroKnowledge ? t('drive.secured') : s.isPublic ? t('drive.publicSpace') : t('drive.normalSpace')}
+                    </p>
                   </div>
                 </button>
                 <div className="shrink-0">
@@ -1395,9 +1438,16 @@ export default function EspacesPage() {
         ))}
       </div>
 
+      {isPublic && (
+        <div className="flex items-start gap-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.06] px-3 py-2 text-sm text-sky-200">
+          <Globe size={16} className="mt-0.5 shrink-0" />
+          <span>{t('drive.publicBanner')}</span>
+        </div>
+      )}
+
       <Header
         title={activeSpace?.name ?? ''}
-        subtitle={isZk ? t('drive.securedFolder') : t('drive.normalFolder')}
+        subtitle={isZk ? t('drive.securedFolder') : isPublic ? t('drive.publicSpace') : t('drive.normalFolder')}
         badge={isZk ? 'secured' : undefined}
         badgeLabel={t('drive.securedBadge')}
       >

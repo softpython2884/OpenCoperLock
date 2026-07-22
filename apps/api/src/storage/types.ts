@@ -12,8 +12,11 @@ import type { Readable } from 'node:stream';
 export interface StorageDriver {
   /** Persist a stream under `key`. Returns the number of bytes written. */
   write(key: string, data: Readable): Promise<{ bytesWritten: number }>;
-  /** Open a readable stream for the blob at `key`. */
-  createReadStream(key: string): Readable;
+  /**
+   * Open a readable stream for the blob at `key`. Optional inclusive byte range `{ start, end }`
+   * for HTTP range requests (public media seeking) — only meaningful for plaintext blobs.
+   */
+  createReadStream(key: string, range?: { start?: number; end?: number }): Readable;
   /** Permanently remove the blob. No-op if it does not exist. */
   delete(key: string): Promise<void>;
   /** Whether a blob exists at `key`. */

@@ -38,8 +38,11 @@ export class LocalStorageDriver implements StorageDriver {
     return { bytesWritten };
   }
 
-  createReadStream(key: string): Readable {
-    return createReadStream(this.resolveKey(this.basePath, key));
+  createReadStream(key: string, range?: { start?: number; end?: number }): Readable {
+    const path = this.resolveKey(this.basePath, key);
+    return range && (range.start !== undefined || range.end !== undefined)
+      ? createReadStream(path, { start: range.start, end: range.end })
+      : createReadStream(path);
   }
 
   async delete(key: string): Promise<void> {

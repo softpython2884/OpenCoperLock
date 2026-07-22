@@ -37,6 +37,9 @@ the source.
 - **Hybrid encryption** — AES-256-GCM at rest by default (so files can be scanned), plus an
   opt-in zero-knowledge vault whose contents are encrypted in the browser and never
   readable by the server.
+- **Public / Open spaces** — a space whose files are stored unencrypted and served at a
+  direct, stable URL (`/p/<code>`) with range requests and long caching — for hosting public
+  images/videos to embed on other sites, loading as fast as possible.
 - **Administration** — create users, set per-user quotas, define the global cap, manage
   Quick-Upload codes and read the audit log. One-click (or **automatic**) self-update from
   GitHub, with a "What's new" dialog that shows each user the release notes once per update.

@@ -7,7 +7,7 @@ export const ROLES = ['ADMIN', 'USER'] as const;
 export type Role = (typeof ROLES)[number];
 
 /** How a file's bytes are protected at rest. Mirrors the Prisma `EncMode` enum. */
-export const ENC_MODES = ['SERVER', 'ZK'] as const;
+export const ENC_MODES = ['SERVER', 'ZK', 'PUBLIC'] as const;
 export type EncMode = (typeof ENC_MODES)[number];
 
 /** Antivirus scan outcome for a stored file. Mirrors the Prisma `AvStatus` enum. */

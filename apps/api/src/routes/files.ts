@@ -45,10 +45,12 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     return { files: files.map(toPublicFile) };
   });
 
-  // POST /files?folderId= — streaming, server-side-encrypted upload.
+  // POST /files?folderId= — streaming upload. Server-side encrypted normally; stored plaintext
+  // (and given a public URL) when the target folder is a Public/Open space.
   app.post('/', async (req, reply) => {
     const { folderId } = req.query as { folderId?: string };
 
+    let isPublicFolder = false;
     if (folderId) {
       const folder = await prisma.folder.findFirst({
         where: { id: folderId, ownerId: req.user!.id, spaceId: null },
@@ -59,20 +61,22 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
           .code(400)
           .send({ error: 'Use the Zero-Knowledge upload endpoint for vault folders' });
       }
+      isPublicFolder = folder.isPublic;
     }
 
     const part = await req.file();
     if (!part) return reply.code(400).send({ error: 'No file provided' });
 
     try {
-      // Shared pipeline: quota + antivirus + server-side encryption + text-file versioning,
-      // plus outgoing-webhook dispatch — identical to the REST API and WebDAV.
+      // Shared pipeline: quota + antivirus + (encryption or plaintext-for-public) + text-file
+      // versioning, plus outgoing-webhook dispatch — identical to the REST API and WebDAV.
       const { file, versioned } = await storeUserFile(app.ctx, {
         ownerId: req.user!.id,
         folderId: folderId ?? null,
         stream: part.file,
         filename: part.filename,
         mimetype: part.mimetype,
+        public: isPublicFolder,
       });
       await audit(req, versioned ? 'file.version' : 'file.upload', { target: file.id });
       return reply.code(201).send({ file: toPublicFile(file) });
@@ -110,7 +114,12 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
         'Content-Disposition',
         `attachment; filename="${encodeURIComponent(file.name)}"`,
       );
-    return reply.send(decryptServerFile(app.ctx, file));
+    // PUBLIC files are stored plaintext (Public/Open space); everything else is decrypted.
+    return reply.send(
+      file.encMode === 'PUBLIC'
+        ? app.ctx.storage.createReadStream(file.storageKey)
+        : decryptServerFile(app.ctx, file),
+    );
   });
 
   // PATCH /files/:id — rename and/or move a SERVER-mode file.

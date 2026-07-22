@@ -18,6 +18,7 @@ enum Role {
 enum EncMode {
   SERVER // server-side envelope encryption at rest (scannable)
   ZK // zero-knowledge: encrypted client-side, server is blind
+  PUBLIC // stored as plaintext, served publicly & fast (no encryption) — for public media hosting
 }
 
 enum AvStatus {
@@ -168,6 +169,9 @@ model Folder {
   space           SharedSpace? @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   name            String
   isZeroKnowledge Boolean  @default(false)
+  // When set, this is a Public/Open space: files are stored as plaintext and served publicly at
+  // /p/<slug> for fast, embeddable media hosting (no encryption). Mutually exclusive with ZK.
+  isPublic        Boolean  @default(false)
   // Per-vault random salt for the client's PBKDF2 key derivation (ZK folders only).
   // Not secret; storing it per vault defeats cross-vault precomputation. null = legacy.
   zkSalt          String?
@@ -205,6 +209,11 @@ model FileObject {
   // Opaque key into the storage driver (e.g. a path under STORAGE_PATH).
   storageKey String  @unique
   encMode   EncMode  @default(SERVER)
+
+  // ── PUBLIC mode ──
+  // Stable, opaque slug for the public URL /p/<publicSlug>. Set only for PUBLIC files (files in a
+  // Public space); null otherwise. The stored blob is plaintext so it can be range-served fast.
+  publicSlug String? @unique
 
   // ── SERVER mode crypto material ──
   // base64 DEK wrapped by the deployment MASTER_KEY; null for ZK files.

@@ -57,6 +57,8 @@ export const createFolderSchema = z.object({
   name: folderNameSchema,
   parentId: cuidSchema.nullable().optional(),
   isZeroKnowledge: z.boolean().optional().default(false),
+  // Create a Public/Open space (plaintext, served at /p/<slug>). Mutually exclusive with ZK.
+  isPublic: z.boolean().optional().default(false),
   // Client-generated per-vault salt (hex) for a new ZK vault; the server falls back to its
   // own random salt if omitted. Ignored for normal folders.
   zkSalt: z.string().min(8).max(128).optional(),

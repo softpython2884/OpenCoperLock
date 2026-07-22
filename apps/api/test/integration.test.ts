@@ -994,6 +994,118 @@ runIf('API integration', () => {
     });
   });
 
+  describe('public / open spaces', () => {
+    async function makePublicSpace(auth: Awaited<ReturnType<typeof login>>) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/folders',
+        headers: authHeaders(auth),
+        payload: { name: 'CDN', isPublic: true },
+      });
+      expect(res.statusCode).toBe(201);
+      expect(res.json().folder.isPublic).toBe(true);
+      return res.json().folder.id as string;
+    }
+    async function uploadPublic(
+      auth: Awaited<ReturnType<typeof login>>,
+      folderId: string,
+      filename: string,
+      contents: Buffer,
+      contentType: string,
+    ) {
+      const form = new FormData();
+      form.append('file', contents, { filename, contentType });
+      return app.inject({
+        method: 'POST',
+        url: `/files?folderId=${folderId}`,
+        payload: form.getBuffer(),
+        headers: { ...form.getHeaders(), ...authHeaders(auth) },
+      });
+    }
+
+    it('stores plaintext and serves the raw bytes publicly with the right headers', async () => {
+      const user = await createUser({ email: 'pub@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 'pub@test.local', 'correct-horse-battery');
+      const folderId = await makePublicSpace(auth);
+      const body = Buffer.from('PNGDATA-'.repeat(64));
+      const up = await uploadPublic(auth, folderId, 'pic.png', body, 'image/png');
+      expect(up.statusCode).toBe(201);
+      const f = up.json().file;
+      expect(f.encMode).toBe('PUBLIC');
+      expect(typeof f.publicSlug).toBe('string');
+      expect(Number((await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).usedBytes)).toBe(body.length);
+      // Stored plaintext: no crypto material on the row.
+      const row = await prisma.fileObject.findUniqueOrThrow({ where: { id: f.id } });
+      expect(row.wrappedKey).toBeNull();
+      expect(row.iv).toBeNull();
+
+      // Public, unauthenticated serving.
+      const res = await app.inject({ method: 'GET', url: `/p/${f.publicSlug}` });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toContain('image/png');
+      expect(res.headers['accept-ranges']).toBe('bytes');
+      expect(res.headers['access-control-allow-origin']).toBe('*');
+      // Must override Helmet's same-origin CORP, else other sites can't embed the media.
+      expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
+      expect(String(res.headers['cache-control'])).toContain('immutable');
+      expect(Buffer.from(res.rawPayload).equals(body)).toBe(true);
+      // The cosmetic /<name> suffix serves identically.
+      const named = await app.inject({ method: 'GET', url: `/p/${f.publicSlug}/pic.png` });
+      expect(named.statusCode).toBe(200);
+    });
+
+    it('supports range requests (206), suffix ranges, ETag (304) and bad ranges (416)', async () => {
+      await createUser({ email: 'pub2@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 'pub2@test.local', 'correct-horse-battery');
+      const folderId = await makePublicSpace(auth);
+      const body = Buffer.from('0123456789abcdef'.repeat(10)); // 160 bytes
+      const slug = (await uploadPublic(auth, folderId, 'v.bin', body, 'application/octet-stream')).json().file.publicSlug;
+
+      const range = await app.inject({ method: 'GET', url: `/p/${slug}`, headers: { range: 'bytes=0-9' } });
+      expect(range.statusCode).toBe(206);
+      expect(range.headers['content-range']).toBe(`bytes 0-9/${body.length}`);
+      expect(range.headers['content-length']).toBe('10');
+      expect(Buffer.from(range.rawPayload).equals(body.subarray(0, 10))).toBe(true);
+
+      const suffix = await app.inject({ method: 'GET', url: `/p/${slug}`, headers: { range: 'bytes=-5' } });
+      expect(suffix.statusCode).toBe(206);
+      expect(Buffer.from(suffix.rawPayload).equals(body.subarray(body.length - 5))).toBe(true);
+
+      const full = await app.inject({ method: 'GET', url: `/p/${slug}` });
+      const etag = full.headers['etag'] as string;
+      expect(etag).toBeTruthy();
+      const cond = await app.inject({ method: 'GET', url: `/p/${slug}`, headers: { 'if-none-match': etag } });
+      expect(cond.statusCode).toBe(304);
+
+      const bad = await app.inject({ method: 'GET', url: `/p/${slug}`, headers: { range: 'bytes=999-1000' } });
+      expect(bad.statusCode).toBe(416);
+    });
+
+    it('404s a trashed public file and an unknown slug', async () => {
+      await createUser({ email: 'pub3@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 'pub3@test.local', 'correct-horse-battery');
+      const folderId = await makePublicSpace(auth);
+      const up = await uploadPublic(auth, folderId, 'x.png', Buffer.from('data-bytes'), 'image/png');
+      const { id: fileId, publicSlug: slug } = up.json().file;
+      expect((await app.inject({ method: 'GET', url: `/p/${slug}` })).statusCode).toBe(200);
+      await app.inject({ method: 'DELETE', url: `/files/${fileId}`, headers: authHeaders(auth) });
+      expect((await app.inject({ method: 'GET', url: `/p/${slug}` })).statusCode).toBe(404);
+      expect((await app.inject({ method: 'GET', url: '/p/doesnotexist' })).statusCode).toBe(404);
+    });
+
+    it('refuses a folder that is both public and zero-knowledge', async () => {
+      await createUser({ email: 'pub4@test.local', password: 'correct-horse-battery' });
+      const auth = await login(app, 'pub4@test.local', 'correct-horse-battery');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/folders',
+        headers: authHeaders(auth),
+        payload: { name: 'bad', isPublic: true, isZeroKnowledge: true },
+      });
+      expect(res.statusCode).toBe(400);
+    });
+  });
+
   describe('admin maintenance', () => {
     it('reconciles a drifted usedBytes counter', async () => {
       const admin = await createUser({

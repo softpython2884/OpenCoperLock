@@ -12,6 +12,8 @@ import { useAuth } from '@/lib/auth';
 import { useT } from '@/lib/i18n';
 import { prompt, toast } from '@/components/ui/overlays';
 import { Select } from '@/components/ui/Select';
+import { Monitor, Smartphone } from 'lucide-react';
+import { parseUserAgent } from '@/lib/userAgent';
 
 interface TwoFaStatus {
   enabled: boolean;
@@ -247,24 +249,35 @@ export default function AccountPage() {
           </button>
         </div>
         <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
-          {sessions.map((s) => (
-            <div key={s.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-              <div className="min-w-0">
-                <p className="truncate">
-                  {s.ip ?? t('account.unknownIp')}
-                  {s.current && <span className="ml-2 text-xs text-accent">{t('account.thisDevice')}</span>}
-                </p>
-                <p className="truncate text-xs text-neutral-400">
-                  {s.userAgent ?? t('account.unknownDevice')} · {t('account.lastSeen', { date: new Date(s.lastSeenAt).toLocaleString() })}
-                </p>
+          {sessions.map((s) => {
+            const ua = parseUserAgent(s.userAgent);
+            const DeviceIcon = ua.mobile ? Smartphone : Monitor;
+            return (
+              <div key={s.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white/[0.04] text-zinc-400">
+                    <DeviceIcon size={17} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 truncate font-medium">
+                      <span className="truncate" title={s.userAgent ?? undefined}>
+                        {s.userAgent ? ua.label : t('account.unknownDevice')}
+                      </span>
+                      {s.current && <span className="shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-[11px] text-violet-300">{t('account.thisDevice')}</span>}
+                    </p>
+                    <p className="truncate text-xs text-neutral-400">
+                      {s.ip ?? t('account.unknownIp')} · {t('account.lastSeen', { date: new Date(s.lastSeenAt).toLocaleString() })}
+                    </p>
+                  </div>
+                </div>
+                {!s.current && (
+                  <button className="btn-danger shrink-0 px-2 py-1" onClick={() => revoke(s.id)}>
+                    {t('account.revoke')}
+                  </button>
+                )}
               </div>
-              {!s.current && (
-                <button className="btn-danger px-2 py-1" onClick={() => revoke(s.id)}>
-                  {t('account.revoke')}
-                </button>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 

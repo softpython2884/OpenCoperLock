@@ -28,6 +28,7 @@ import {
   LogOut,
   Eye,
   File as FileIcon,
+  FolderLock,
 } from 'lucide-react';
 import type {
   PublicFile,
@@ -43,6 +44,7 @@ import { useT } from '@/lib/i18n';
 import { Select } from '@/components/ui/Select';
 import { FileViewer, type ViewerSource } from '@/components/FileViewer';
 import { ContextMenu } from '@/components/drive/ContextMenu';
+import { CrossCopyPicker, type CopyDest } from '@/components/drive/CrossCopyPicker';
 import type { MenuItem } from '@/components/ui/Menu';
 import { confirm, choose, prompt, toast } from '@/components/ui/overlays';
 
@@ -63,6 +65,8 @@ export default function SpacePage() {
   const [showManage, setShowManage] = useState(false);
   const [viewing, setViewing] = useState<ViewerSource | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const [copyItem, setCopyItem] = useState<{ kind: 'file' | 'folder'; id: string } | null>(null);
+  const [copyBusy, setCopyBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const canWrite = space ? space.myRole === 'OWNER' || space.myRole === 'EDITOR' : false;
@@ -214,11 +218,53 @@ export default function SpacePage() {
     }
   }
 
+  // ── Cross-realm copy: shared space → personal Drive ────────────────────────
+  // Any member (even a VIEWER) can pull a copy into their own Drive — it's billed to THEIR quota via
+  // the normal personal upload endpoint, and reads are already allowed by membership.
+  async function copyFileToPersonal(destFolderId: string, srcId: string, name: string) {
+    const res = await fetch(api.url(`/spaces/${spaceId}/files/${srcId}/download`), { credentials: 'include' });
+    if (!res.ok) throw new ApiError(res.status, t('space.copyFailed'));
+    const blob = await res.blob();
+    const form = new FormData();
+    form.append('file', new File([blob], name));
+    await api.upload(`/files?folderId=${encodeURIComponent(destFolderId)}`, form);
+  }
+  async function copyFolderToPersonal(destParentId: string, folderId: string, name: string) {
+    const created = await api.post<{ folder: { id: string } }>('/folders', { name, parentId: destParentId });
+    const newId = created.folder.id;
+    const { files: kids } = await api.get<{ files: PublicFile[] }>(`/spaces/${spaceId}/files?folderId=${encodeURIComponent(folderId)}`);
+    for (const f of kids) await copyFileToPersonal(newId, f.id, f.name);
+    for (const sub of folders.filter((x) => x.parentId === folderId)) {
+      await copyFolderToPersonal(newId, sub.id, sub.name);
+    }
+  }
+  async function performCopyToPersonal(dest: CopyDest) {
+    if (dest.realm !== 'personal' || !copyItem) return;
+    const item = copyItem;
+    setCopyItem(null);
+    setCopyBusy(true);
+    try {
+      if (item.kind === 'file') {
+        const f = files.find((x) => x.id === item.id);
+        if (f) await copyFileToPersonal(dest.folderId, f.id, f.name);
+      } else {
+        const fld = folders.find((x) => x.id === item.id);
+        if (fld) await copyFolderToPersonal(dest.folderId, fld.id, fld.name);
+      }
+      toast(t('space.copiedToPersonal', { name: dest.label }), 'success');
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : t('space.copyFailed'), 'error');
+    } finally {
+      setCopyBusy(false);
+    }
+  }
+
   // ── Right-click menus ──────────────────────────────────────────────────────
   function fileMenu(f: PublicFile): MenuItem[] {
     const items: MenuItem[] = [
       { label: t('space.openFile'), icon: Eye, onClick: () => openFile(f) },
       { label: t('space.download'), icon: Download, onClick: () => download(f) },
+      { label: t('space.copyToPersonal'), icon: FolderLock, onClick: () => setCopyItem({ kind: 'file', id: f.id }) },
     ];
     if (canWrite) {
       items.push({ label: t('space.rename'), icon: Pencil, onClick: () => void renameFile(f) });
@@ -227,7 +273,10 @@ export default function SpacePage() {
     return items;
   }
   function folderMenu(f: PublicFolder): MenuItem[] {
-    const items: MenuItem[] = [{ label: t('space.openFile'), icon: FolderIcon, onClick: () => setCwd(f.id) }];
+    const items: MenuItem[] = [
+      { label: t('space.openFile'), icon: FolderIcon, onClick: () => setCwd(f.id) },
+      { label: t('space.copyToPersonal'), icon: FolderLock, onClick: () => setCopyItem({ kind: 'folder', id: f.id }) },
+    ];
     if (canWrite) {
       items.push({ label: t('space.rename'), icon: Pencil, onClick: () => void renameFolder(f) });
       items.push({ label: t('space.delete'), icon: Trash2, danger: true, onClick: () => void deleteFolder(f) });
@@ -513,6 +562,16 @@ export default function SpacePage() {
 
       {viewing && <FileViewer source={viewing} onClose={() => setViewing(null)} />}
       {ctxMenu && <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxMenu.items} onClose={() => setCtxMenu(null)} />}
+      {copyItem && (
+        <CrossCopyPicker target="personal" count={1} onPick={(d) => void performCopyToPersonal(d)} onClose={() => setCopyItem(null)} />
+      )}
+      {copyBusy && (
+        <div className="fixed inset-0 z-[150] grid place-items-center bg-black/50 backdrop-blur-sm">
+          <div className="rounded-xl border border-white/10 bg-[#15151d] px-5 py-4 text-sm text-zinc-200 shadow-2xl">
+            {t('space.copying')}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -51,6 +51,7 @@ import {
   PackageOpen,
   Check,
   X,
+  Users,
 } from 'lucide-react';
 import { zip as fzip, unzip as funzip } from 'fflate';
 import type { PublicFile, PublicFolder } from '@opencoperlock/shared/client';
@@ -79,6 +80,8 @@ import { ShortcutsHelp } from '@/components/drive/ShortcutsHelp';
 import { VersionHistory } from '@/components/drive/VersionHistory';
 import { ContextMenu } from '@/components/drive/ContextMenu';
 import { FolderPicker } from '@/components/drive/FolderPicker';
+import { ZipExplorer } from '@/components/drive/ZipExplorer';
+import { CrossCopyPicker, type CopyDest } from '@/components/drive/CrossCopyPicker';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 
 interface ZkFile {
@@ -138,6 +141,8 @@ export default function EspacesPage() {
   const [viewing, setViewing] = useState<ViewerSource | null>(null);
   const [shareLink, setShareLink] = useState<string | null>(null);
   const [versionsFor, setVersionsFor] = useState<PublicFile | null>(null);
+  const [zipView, setZipView] = useState<{ name: string; entries: Record<string, Uint8Array> } | null>(null);
+  const [copyPicker, setCopyPicker] = useState<{ items: { kind: 'file' | 'folder'; id: string }[] } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   // selection / clipboard / overlays
@@ -1294,11 +1299,83 @@ export default function EspacesPage() {
     }
   }
 
+  // Open the .zip in a read-only in-memory browser (no extraction into the Drive).
+  async function exploreZip(e: Entry) {
+    setBusy(t('drive.opening'));
+    try {
+      const archive = await entryBytes(e);
+      if (!archive) return;
+      const entries = await unzipAsync(archive.data);
+      setZipView({ name: archive.name, entries });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('drive.extractFailed'));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // ── Cross-realm copy: personal → shared space ──────────────────────────────
+  // Only offered for non-ZK spaces (a blind vault can't hand plaintext to another realm). Reuses the
+  // normal endpoints so the server keeps enforcing membership + quota on the destination.
+  async function copyFileToShared(spaceId: string, folderId: string | null, srcId: string, name: string) {
+    const res = await fetch(api.url(`/files/${srcId}/download`), { credentials: 'include' });
+    if (!res.ok) throw new ApiError(res.status, t('drive.copyFailed'));
+    const data = new Uint8Array(await res.arrayBuffer());
+    const form = new FormData();
+    form.append('file', new File([asPart(data)], name));
+    await api.upload(`/spaces/${spaceId}/files${folderId ? `?folderId=${encodeURIComponent(folderId)}` : ''}`, form);
+  }
+  async function copyFolderToShared(spaceId: string, destParentId: string | null, folderId: string, name: string) {
+    const created = await api.post<{ folder: { id: string } }>(`/spaces/${spaceId}/folders`, { name, parentId: destParentId });
+    const newId = created.folder.id;
+    const { files } = await api.get<{ files: PublicFile[] }>(`/files?folderId=${encodeURIComponent(folderId)}`);
+    for (const f of files) await copyFileToShared(spaceId, newId, f.id, f.name);
+    for (const sub of allFolders.filter((x) => x.parentId === folderId)) {
+      await copyFolderToShared(spaceId, newId, sub.id, sub.name);
+    }
+  }
+  async function performCopyToShared(dest: CopyDest) {
+    if (dest.realm !== 'shared' || !copyPicker) return;
+    const items = copyPicker.items;
+    setCopyPicker(null);
+    setBusy(t('drive.copying'));
+    try {
+      let n = 0;
+      for (const it of items) {
+        if (it.kind === 'file') {
+          const f = files.find((x) => x.id === it.id);
+          if (f) await copyFileToShared(dest.spaceId, dest.folderId, f.id, f.name);
+        } else {
+          const fld = allFolders.find((x) => x.id === it.id);
+          if (fld) await copyFolderToShared(dest.spaceId, dest.folderId, fld.id, fld.name);
+        }
+        n += 1;
+      }
+      toast(t('drive.copiedToShared', { n, name: dest.label }), 'success');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t('drive.copyFailed'));
+    } finally {
+      setBusy(null);
+    }
+  }
+  function copyToShared(kind: 'file' | 'folder', id: string) {
+    setCopyPicker({ items: [{ kind, id }] });
+  }
+  function bulkCopyToShared() {
+    const items: { kind: 'file' | 'folder'; id: string }[] = [];
+    for (const e of entriesByKeys([...selected])) {
+      if (e.kind === 'folder') items.push({ kind: 'folder', id: e.folder.id });
+      else if (e.kind === 'file') items.push({ kind: 'file', id: e.file.id });
+    }
+    if (items.length) setCopyPicker({ items });
+  }
+
   // ── Menu items (shared by the "⋮" overflow menu and the right-click context menu) ──
   function folderMenuItems(folder: PublicFolder): MenuItem[] {
     return [
       { label: t('drive.actionRename'), icon: Pencil, onClick: () => void renameFolder(folder) },
       ...(!isZk ? [{ label: t('drive.actionMove'), icon: FolderInput, onClick: () => void move('folder', folder.id) }] : []),
+      ...(!isZk ? [{ label: t('drive.actionCopyToShared'), icon: Users, onClick: () => copyToShared('folder', folder.id) }] : []),
       ...(!isZk ? [{ label: t('drive.actionShare'), icon: Share2, onClick: () => void share('folder', folder.id) }] : []),
       { label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => void deleteFolder(folder.id) },
     ];
@@ -1318,9 +1395,13 @@ export default function EspacesPage() {
     return [
       { label: t('drive.actionRename'), icon: Pencil, onClick: () => void renameFile(file) },
       { label: t('drive.actionMove'), icon: FolderInput, onClick: () => void move('file', file.id) },
+      { label: t('drive.actionCopyToShared'), icon: Users, onClick: () => copyToShared('file', file.id) },
       { label: t('drive.actionDuplicate'), icon: Files, onClick: () => void duplicateFile(file.id, file.name, file.mimeType, currentFolderId!, true).then(reloadCurrent) },
       ...(isZip(file.name, file.mimeType)
-        ? [{ label: t('drive.actionExtract'), icon: PackageOpen, onClick: () => void extractZip({ key: `file:${file.id}`, kind: 'file', name: file.name, size: file.sizeBytes, date: 0, file }) }]
+        ? [
+            { label: t('drive.actionExploreZip'), icon: Archive, onClick: () => void exploreZip({ key: `file:${file.id}`, kind: 'file', name: file.name, size: file.sizeBytes, date: 0, file }) },
+            { label: t('drive.actionExtract'), icon: PackageOpen, onClick: () => void extractZip({ key: `file:${file.id}`, kind: 'file', name: file.name, size: file.sizeBytes, date: 0, file }) },
+          ]
         : []),
       { label: t('drive.actionShare'), icon: Share2, onClick: () => void share('file', file.id) },
       { label: t('drive.actionVersions'), icon: History, onClick: () => setVersionsFor(file) },
@@ -1330,7 +1411,10 @@ export default function EspacesPage() {
   function zkMenuItems(zk: ZkFile): MenuItem[] {
     return [
       ...(isZip(zkName(zk))
-        ? [{ label: t('drive.actionExtract'), icon: PackageOpen, onClick: () => void extractZip({ key: `zk:${zk.id}`, kind: 'zk', name: zkName(zk), size: zk.sizeBytes, date: 0, zk }) }]
+        ? [
+            { label: t('drive.actionExploreZip'), icon: Archive, onClick: () => void exploreZip({ key: `zk:${zk.id}`, kind: 'zk', name: zkName(zk), size: zk.sizeBytes, date: 0, zk }) },
+            { label: t('drive.actionExtract'), icon: PackageOpen, onClick: () => void extractZip({ key: `zk:${zk.id}`, kind: 'zk', name: zkName(zk), size: zk.sizeBytes, date: 0, zk }) },
+          ]
         : []),
       { label: t('drive.actionDelete'), icon: Trash2, danger: true, onClick: () => void deleteFile(zk.id) },
     ];
@@ -1347,6 +1431,7 @@ export default function EspacesPage() {
       items.push({ label: t('drive.actionCopy'), icon: Copy, onClick: () => buildClip('copy') });
       items.push({ label: t('drive.actionCut'), icon: Scissors, onClick: () => buildClip('cut') });
       items.push({ label: t('drive.bulkMove'), icon: FolderInput, onClick: () => void bulkMove() });
+      items.push({ label: t('drive.actionCopyToShared'), icon: Users, onClick: () => bulkCopyToShared() });
     }
     items.push({ label: t('drive.bulkDelete'), icon: Trash2, danger: true, onClick: () => void bulkDelete() });
     return items;
@@ -1385,7 +1470,7 @@ export default function EspacesPage() {
   // ── Keyboard shortcuts ───────────────────────────────────────────────────────
   // A ref keeps the latest handler so we register the window listener only once.
   const keyHandler = (e: KeyboardEvent) => {
-    if (paletteOpen || helpOpen || viewing || askPass || shareLink || versionsFor || ctxMenu) return;
+    if (paletteOpen || helpOpen || viewing || askPass || shareLink || versionsFor || ctxMenu || zipView || copyPicker) return;
     if (document.querySelector('[class*="z-[100]"]')) return; // an in-app dialog is open
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === 'k') {
@@ -1858,6 +1943,10 @@ export default function EspacesPage() {
           onClose={() => setVersionsFor(null)}
           onRestored={reloadCurrent}
         />
+      )}
+      {zipView && <ZipExplorer name={zipView.name} entries={zipView.entries} onClose={() => setZipView(null)} />}
+      {copyPicker && (
+        <CrossCopyPicker target="shared" count={copyPicker.items.length} onPick={(d) => void performCopyToShared(d)} onClose={() => setCopyPicker(null)} />
       )}
       {paletteOpen && <CommandPalette items={paletteItems} onSearch={searchFiles} onClose={() => setPaletteOpen(false)} />}
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}

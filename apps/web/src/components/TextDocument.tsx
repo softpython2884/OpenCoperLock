@@ -13,12 +13,31 @@
  * `onSave` (the Drive page re-uploads server files as a new version, or re-encrypts and
  * replaces Zero-Knowledge files).
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import hljs from 'highlight.js';
-import { Eye, Code2, Pencil, Save, Loader2, Play } from 'lucide-react';
+import {
+  Eye,
+  Code2,
+  Pencil,
+  Save,
+  Loader2,
+  Play,
+  Bold,
+  Italic,
+  Strikethrough,
+  Code,
+  Heading1,
+  Heading2,
+  List,
+  ListOrdered,
+  ListChecks,
+  Quote,
+  Link2,
+  Columns2,
+} from 'lucide-react';
 import { codeLanguage, isHtml, isMarkdown } from '@/lib/fileType';
 import { useT } from '@/lib/i18n';
 import { confirm, toast } from '@/components/ui/overlays';
@@ -131,7 +150,9 @@ export function TextDocument({
 
       {/* Body */}
       <div className="min-h-0 flex-1 overflow-auto">
-        {editing ? (
+        {editing && md ? (
+          <MarkdownEditor value={text} onChange={setText} />
+        ) : editing ? (
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -158,6 +179,124 @@ export function TextDocument({
           />
         ) : (
           <CodeBlock name={name} text={text} highlight={!md} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Markdown editor: a source textarea with a formatting toolbar and a live preview beside it that
+ * re-renders as you type — the "what you type is what you get" feel, without a heavy WYSIWYG engine.
+ */
+function MarkdownEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { t } = useT();
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const [preview, setPreview] = useState(true);
+
+  /** Wrap the current selection with `before`/`after` (e.g. **bold**). */
+  function surround(before: string, after = before) {
+    const ta = ref.current;
+    if (!ta) return;
+    const s = ta.selectionStart;
+    const e = ta.selectionEnd;
+    const next = value.slice(0, s) + before + value.slice(s, e) + after + value.slice(e);
+    onChange(next);
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.selectionStart = s + before.length;
+      ta.selectionEnd = e + before.length;
+    });
+  }
+  /** Prefix every line touched by the selection (headings, lists, quotes). */
+  function prefixLines(prefix: string) {
+    const ta = ref.current;
+    if (!ta) return;
+    const s = ta.selectionStart;
+    const e = ta.selectionEnd;
+    const lineStart = value.lastIndexOf('\n', s - 1) + 1;
+    const block = value.slice(lineStart, e);
+    const prefixed = block.split('\n').map((l) => prefix + l).join('\n');
+    const next = value.slice(0, lineStart) + prefixed + value.slice(e);
+    onChange(next);
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.selectionStart = lineStart;
+      ta.selectionEnd = e + (prefixed.length - block.length);
+    });
+  }
+
+  const tools: { icon: typeof Bold; label: string; run: () => void }[] = [
+    { icon: Bold, label: t('mdedit.bold'), run: () => surround('**') },
+    { icon: Italic, label: t('mdedit.italic'), run: () => surround('*') },
+    { icon: Strikethrough, label: t('mdedit.strike'), run: () => surround('~~') },
+    { icon: Code, label: t('mdedit.code'), run: () => surround('`') },
+    { icon: Heading1, label: t('mdedit.h1'), run: () => prefixLines('# ') },
+    { icon: Heading2, label: t('mdedit.h2'), run: () => prefixLines('## ') },
+    { icon: List, label: t('mdedit.bullet'), run: () => prefixLines('- ') },
+    { icon: ListOrdered, label: t('mdedit.number'), run: () => prefixLines('1. ') },
+    { icon: ListChecks, label: t('mdedit.check'), run: () => prefixLines('- [ ] ') },
+    { icon: Quote, label: t('mdedit.quote'), run: () => prefixLines('> ') },
+    { icon: Link2, label: t('mdedit.link'), run: () => surround('[', '](https://)') },
+  ];
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (!(e.metaKey || e.ctrlKey)) return;
+    const k = e.key.toLowerCase();
+    if (k === 'b') {
+      e.preventDefault();
+      surround('**');
+    } else if (k === 'i') {
+      e.preventDefault();
+      surround('*');
+    }
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 flex-wrap items-center gap-0.5 border-b border-white/10 px-2 py-1.5">
+        {tools.map((tool) => (
+          <button
+            key={tool.label}
+            type="button"
+            title={tool.label}
+            aria-label={tool.label}
+            onClick={tool.run}
+            className="rounded-md p-1.5 text-zinc-400 transition hover:bg-white/5 hover:text-zinc-100"
+          >
+            <tool.icon size={15} />
+          </button>
+        ))}
+        <div className="ml-auto">
+          <button
+            type="button"
+            title={t('mdedit.togglePreview')}
+            onClick={() => setPreview((p) => !p)}
+            className={`rounded-md p-1.5 transition hover:bg-white/5 ${preview ? 'text-violet-300' : 'text-zinc-400 hover:text-zinc-100'}`}
+          >
+            <Columns2 size={15} />
+          </button>
+        </div>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <textarea
+          ref={ref}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          spellCheck={false}
+          className={`min-h-0 w-full flex-1 resize-none bg-transparent p-4 font-mono text-xs leading-relaxed text-zinc-200 outline-none ${preview ? 'md:w-1/2' : ''}`}
+        />
+        {preview && (
+          <div className="md-prose min-h-0 flex-1 overflow-auto border-t border-white/10 p-4 md:w-1/2 md:border-l md:border-t-0">
+            {value.length < HIGHLIGHT_LIMIT ? (
+              <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                {value}
+              </Markdown>
+            ) : (
+              <Markdown remarkPlugins={[remarkGfm]}>{value}</Markdown>
+            )}
+          </div>
         )}
       </div>
     </div>

@@ -527,6 +527,26 @@ curl -H "Authorization: Bearer ocl_…" -F "file=@backup.tgz" \\
             L('Le Quick-Upload est parfait pour envoyer depuis un téléphone sans se connecter.', 'Quick-Upload is perfect for sending from a phone without signing in.'),
           ],
         },
+        { h: L('Monter le Drive sur téléphone (WebDAV)', 'Mount the Drive on your phone (WebDAV)') },
+        {
+          warn: L(
+            'Le « Disque réseau » intégré de Samsung My Files ne fait que du SMB (partage Windows) et parfois du FTP — pas de WebDAV. C’est pourquoi il réclame un numéro de port et que ça ne marche pas : OpenCoperLock parle WebDAV (sur HTTPS/443), pas SMB (445). Utilisez une appli qui gère le WebDAV.',
+            'Samsung My Files’ built-in “Network drive” only speaks SMB (Windows shares) and sometimes FTP — not WebDAV. That’s why it asks for a port and fails: OpenCoperLock speaks WebDAV (over HTTPS/443), not SMB (445). Use an app that supports WebDAV.',
+          ),
+        },
+        {
+          p: L('Applis Android qui gèrent WebDAV : Solid Explorer, CX File Explorer, Material Files, FolderSync, ou Round Sync / RCX (rclone). Renseignez :', 'Android apps that support WebDAV: Solid Explorer, CX File Explorer, Material Files, FolderSync, or Round Sync / RCX (rclone). Enter:'),
+        },
+        {
+          code:
+            `URL     : ${API_URL}/dav/\n` +
+            `${L('Hôte', 'Host')}    : ${(API_URL || 'https://<host>').replace(/^https?:\/\//, '').replace(/\/.*/, '')}\n` +
+            `Port    : 443  (HTTPS / SSL ${L('activé', 'on')})\n` +
+            `${L('Chemin', 'Path')}  : /api/dav/\n` +
+            `${L('Utilisateur', 'Username')} : ${L('n’importe quoi (ignoré)', 'anything (ignored)')}\n` +
+            `${L('Mot de passe', 'Password')} : ${L('votre jeton d’API (ocl_…)', 'your API token (ocl_…)')}`,
+        },
+        { note: L('Le plus simple sur mobile reste la PWA : ouvrez le site dans Chrome → menu → « Ajouter à l’écran d’accueil ». Vous obtenez une vraie app, avec le mode hors-ligne.', 'The simplest option on mobile is the PWA: open the site in Chrome → menu → “Add to Home screen”. You get a real app, with offline mode.') },
       ],
     },
   ];

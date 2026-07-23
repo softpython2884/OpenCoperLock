@@ -26,6 +26,16 @@ function Test-Admin {
 }
 $IsAdmin = Test-Admin
 
+# Self-elevate (so system-wide HKLM entries are editable). If the user declines UAC we just continue
+# un-elevated - HKCU entries still work.
+if (-not $IsAdmin -and -not $Console -and $PSCommandPath) {
+  try {
+    Start-Process powershell -Verb RunAs -ArgumentList @(
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"")
+    exit
+  } catch { }
+}
+
 $verbRoots = @('*\shell', 'AllFilesystemObjects\shell', 'Directory\shell', 'Directory\Background\shell', 'Folder\shell')
 $hives = [ordered]@{ 'HKCU' = 'HKCU:\Software\Classes'; 'HKLM' = 'HKLM:\SOFTWARE\Classes' }
 
@@ -142,7 +152,11 @@ function Show-Gui {
   $c2 = New-Object System.Windows.Forms.DataGridViewTextBoxColumn; $c2.HeaderText = "Nom"; $c2.ReadOnly = $true; $c2.FillWeight = 40
   $c3 = New-Object System.Windows.Forms.DataGridViewTextBoxColumn; $c3.HeaderText = "S'applique a"; $c3.ReadOnly = $true; $c3.FillWeight = 30
   $c4 = New-Object System.Windows.Forms.DataGridViewTextBoxColumn; $c4.HeaderText = "Type"; $c4.ReadOnly = $true; $c4.FillWeight = 12
-  [void]$grid.Columns.AddRange(@($colOn, $c1, $c2, $c3, $c4))
+  [void]$grid.Columns.Add($colOn)
+  [void]$grid.Columns.Add($c1)
+  [void]$grid.Columns.Add($c2)
+  [void]$grid.Columns.Add($c3)
+  [void]$grid.Columns.Add($c4)
 
   function Fill-Grid {
     $filter = $txt.Text.Trim()
@@ -250,4 +264,18 @@ function Show-Console {
   Write-Host "`nDone. Restart Explorer for changes to apply." -ForegroundColor Green
 }
 
-if ($Console) { Show-Console } else { Show-Gui }
+if ($Console) {
+  Show-Console
+} else {
+  try {
+    Show-Gui
+  } catch {
+    # A hidden window would otherwise swallow a startup error - log it AND show it.
+    $log = Join-Path $env:TEMP 'ocl-menu-manager.log'
+    try { [System.IO.File]::AppendAllText($log, "$(Get-Date)  GUI error: $($_.Exception.ToString())`r`n") } catch { }
+    try {
+      Add-Type -AssemblyName System.Windows.Forms
+      [System.Windows.Forms.MessageBox]::Show("$($_.Exception.Message)`n`nDetails logged to:`n$log", 'OpenCoperLock - GUI error') | Out-Null
+    } catch { }
+  }
+}

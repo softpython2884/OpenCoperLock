@@ -67,7 +67,7 @@ Log "MKCOL ComputerShared -> $mk (curl exit $LASTEXITCODE)"
 
 $ok = 0; $fail = 0
 foreach ($f in $files) {
-  $leaf = Split-Path -LiteralPath $f -Leaf
+  $leaf = [System.IO.Path]::GetFileName($f)   # .NET: no Split-Path parameter-set pitfall on 5.1
   $name = [uri]::EscapeDataString($leaf)
   $code = & $curl -s -o NUL -w "%{http_code}" -u $cred -T $f "$base/ComputerShared/$name" 2>&1
   Log "PUT '$leaf' -> $base/ComputerShared/$name = $code (curl exit $LASTEXITCODE)"

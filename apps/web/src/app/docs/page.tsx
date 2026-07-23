@@ -389,8 +389,8 @@ curl -H "Authorization: Bearer ocl_…" -F "file=@backup.tgz" \\
         { h: L('Envoyer vers OpenCoperLock (clic droit)', 'Send to OpenCoperLock (right-click)') },
         {
           p: L(
-            'Ajoute une entrée « Envoyer vers → OpenCoperLock » au clic droit de votre explorateur de fichiers (Windows et Linux). Les fichiers sélectionnés sont envoyés en un clic dans un espace « ComputerShared » de votre Drive, via WebDAV. L’installeur mémorise votre serveur et votre jeton d’API.',
-            'Adds a “Send to → OpenCoperLock” entry to your file manager’s right-click menu (Windows and Linux). Selected files upload in one click to a “ComputerShared” space in your Drive, over WebDAV. The installer remembers your server and API token.',
+            'Ajoute au clic droit de votre explorateur (Windows et Linux) de quoi envoyer les fichiers sélectionnés en un clic dans un espace « ComputerShared » de votre Drive, via WebDAV. Sous Windows, l’installeur propose « Envoyer vers → OpenCoperLock » (envoie tout d’un coup) et/ou des entrées « Drop / Multi-Drop on OpenCoperLock ». Tout s’exécute sans fenêtre PowerShell, avec une petite notification en fin de transfert (désactivable).',
+            'Adds right-click uploads to your file manager (Windows and Linux): selected files go in one click to a “ComputerShared” space in your Drive, over WebDAV. On Windows the installer offers “Send to → OpenCoperLock” (uploads all at once) and/or “Drop / Multi-Drop on OpenCoperLock” entries. It runs with no PowerShell window and shows a small notification when done (optional).',
           ),
         },
         { note: L('Créez d’abord un jeton d’API non restreint : Compte → Jetons d’API.', 'First create an unrestricted API token: Account → API tokens.') },
@@ -426,6 +426,19 @@ curl -H "Authorization: Bearer ocl_…" -F "file=@backup.tgz" \\
           ],
         },
         { note: L('Un prompt UAC apparaît uniquement pour la partie qui règle le service WebClient. Le mappage du lecteur reste en session utilisateur.', 'A UAC prompt appears only for the part that configures the WebClient service. The drive mapping stays in your user session.') },
+        { h: L('Ranger le menu clic droit (Windows)', 'Tidy the right-click menu (Windows)') },
+        {
+          p: L(
+            'Les applications ajoutent sans cesse des entrées au menu contextuel de l’Explorateur. Ce petit outil liste toutes les entrées (verbes classiques et extensions shell) et permet d’activer/désactiver celles qui ne servent pas. Rien n’est supprimé — la désactivation est réversible.',
+            'Apps keep piling entries into Explorer’s context menu. This small tool lists every entry (classic verbs and shell extensions) and lets you enable/disable the ones you don’t use. Nothing is deleted — disabling is reversible.',
+          ),
+        },
+        {
+          btns: [
+            { label: L('Télécharger l’outil (.cmd)', 'Download the tool (.cmd)'), href: 'https://github.com/softpython2884/OpenCoperLock/raw/main/scripts/windows-context-menu-manager.cmd' },
+            { label: L('Voir le script (.ps1)', 'View the script (.ps1)'), href: 'https://github.com/softpython2884/OpenCoperLock/blob/main/scripts/windows-context-menu-manager.ps1' },
+          ],
+        },
       ],
     },
     {

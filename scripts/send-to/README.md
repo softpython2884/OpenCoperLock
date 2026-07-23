@@ -20,16 +20,28 @@ new server code — just your existing `ocl_…` API token.
      ```
    - **Or** double-click **`windows/install-windows.cmd`** from a checkout.
 
-   Paste your WebDAV URL (e.g. `https://copper.forgenet.fr/api/dav`) and the token when asked.
-3. Done — right-click any file(s) → **Send to → OpenCoperLock**.
+   Paste your WebDAV URL (e.g. `https://copper.forgenet.fr/api/dav`) and the token when asked, then
+   pick your options (notification on/off; *Send to* menu; *Drop / Multi-Drop* right-click entries).
+3. Done. Depending on your choices, right-click any file(s) →
+   - **Send to → OpenCoperLock** — uploads **all** selected files in one go, or
+   - **Drop on OpenCoperLock** / **Multi-Drop on OpenCoperLock** — top-level right-click entries.
 
-The installer copies `send.ps1` + the icon into `%LOCALAPPDATA%\OpenCoperLock`, stores your token
-**DPAPI-encrypted** (readable only by your Windows user, never leaves the machine), pre-creates the
-`ComputerShared` space, and drops the shortcut into your *Send To* folder (`shell:sendto`).
-Re-run the installer any time to change the URL/token. To uninstall, delete the shortcut from
-`shell:sendto` and the `%LOCALAPPDATA%\OpenCoperLock` folder.
+Everything runs **hidden** (a tiny `launch.vbs` starts the uploader with no PowerShell window) and
+shows a small tray notification when done. The installer stores your token **DPAPI-encrypted**
+(readable only by your Windows user, never leaves the machine), pre-creates the `ComputerShared`
+space, and writes a `%LOCALAPPDATA%\OpenCoperLock\send.log` you can check if an upload misbehaves.
+Re-run the installer any time to change settings. To uninstall: re-run and answer *no* to the
+integrations (or delete the `shell:sendto\OpenCoperLock.lnk`, the `HKCU:\Software\Classes\*\shell\
+OpenCoperLock.*` keys, and the `%LOCALAPPDATA%\OpenCoperLock` folder).
 
 > Uses `curl.exe`, which ships with Windows 10 1803+ and Windows 11.
+
+### Bonus: tidy your right-click menu
+
+Apps love to pile entries into the Explorer context menu. `scripts/windows-context-menu-manager.cmd`
+(double-click; it elevates) lists every classic verb **and** shell-extension entry and lets you
+turn any of them on/off. Nothing is deleted — disabling just sets a reversible flag, so you can
+re-enable anything later.
 
 ## Linux
 

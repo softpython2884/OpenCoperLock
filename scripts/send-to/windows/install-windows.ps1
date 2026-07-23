@@ -20,10 +20,19 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 
-$srcDir = Split-Path -Parent $MyInvocation.MyCommand.Path            # ...\send-to\windows
-$assets = Join-Path (Split-Path -Parent $srcDir) 'assets'           # ...\send-to\assets
+# Files come from the local checkout when run from one, or from the official repo when this script
+# is piped straight from the web (irm ... | iex), so a one-line install works either way.
+$RepoRaw = 'https://raw.githubusercontent.com/softpython2884/OpenCoperLock/main/scripts/send-to'
+$self = $PSCommandPath                                              # null under irm|iex
+$sendToRoot = if ($self) { Split-Path -Parent (Split-Path -Parent $self) } else { $null }
 $dstDir = Join-Path $env:LOCALAPPDATA 'OpenCoperLock'
 New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
+
+function Get-Component($rel, $dst) {
+  $local = if ($sendToRoot) { Join-Path $sendToRoot ($rel -replace '/', '\') } else { $null }
+  if ($local -and (Test-Path $local)) { Copy-Item $local $dst -Force }
+  else { Invoke-WebRequest -UseBasicParsing "$RepoRaw/$rel" -OutFile $dst }
+}
 
 # --- gather settings -----------------------------------------------------------------------------
 $defaultBase = 'https://copper.forgenet.fr/api/dav'
@@ -42,8 +51,8 @@ if (-not $Token) {
 if ([string]::IsNullOrWhiteSpace($Token)) { throw "No token provided." }
 
 # --- install files -------------------------------------------------------------------------------
-Copy-Item (Join-Path $srcDir 'send.ps1') (Join-Path $dstDir 'send.ps1') -Force
-Copy-Item (Join-Path $assets 'opencoperlock.ico') (Join-Path $dstDir 'opencoperlock.ico') -Force
+Get-Component 'windows/send.ps1' (Join-Path $dstDir 'send.ps1')
+Get-Component 'assets/opencoperlock.ico' (Join-Path $dstDir 'opencoperlock.ico')
 
 # DPAPI-encrypt the token (current-user scope) and write the config.
 $enc = ConvertTo-SecureString $Token -AsPlainText -Force | ConvertFrom-SecureString

@@ -5,11 +5,22 @@
 # KDE Dolphin. Selected files upload to the "ComputerShared" space of your Drive over WebDAV.
 set -euo pipefail
 
-here="$(cd "$(dirname "$0")" && pwd)"
-assets="$(cd "$here/../assets" && pwd)"
+# Components come from the local checkout when run from one, or from the official repo when this
+# script is piped from the web (curl ... | bash), so a one-line install works either way.
+REPO_RAW="https://raw.githubusercontent.com/softpython2884/OpenCoperLock/main/scripts/send-to"
+here="$(cd "$(dirname -- "$0")" 2>/dev/null && pwd || true)"
+sendto_root="$(cd "$here/.." 2>/dev/null && pwd || true)"
 data="${XDG_DATA_HOME:-$HOME/.local/share}/opencoperlock"
 cfgdir="${XDG_CONFIG_HOME:-$HOME/.config}/opencoperlock"
 mkdir -p "$data" "$cfgdir"
+
+fetch() { # $1 = path under send-to, $2 = destination, $3 = chmod mode
+  if [ -n "$sendto_root" ] && [ -f "$sendto_root/$1" ]; then
+    install -m "$3" "$sendto_root/$1" "$2"
+  else
+    curl -fsSL "$REPO_RAW/$1" -o "$2" && chmod "$3" "$2"
+  fi
+}
 
 default_base="https://copper.forgenet.fr/api/dav"
 read -rp "WebDAV base URL [$default_base]: " BASE
@@ -24,9 +35,9 @@ umask 077
 printf 'BASE=%q\nTOKEN=%q\n' "$BASE" "$TOKEN" > "$cfgdir/config"
 chmod 600 "$cfgdir/config"
 
-# Install the uploader + icon.
-install -m 0755 "$here/send.sh" "$data/send.sh"
-install -m 0644 "$assets/opencoperlock.png" "$data/opencoperlock.png"
+# Install the uploader + icon (from the checkout or the official repo).
+fetch 'linux/send.sh' "$data/send.sh" 0755
+fetch 'assets/opencoperlock.png' "$data/opencoperlock.png" 0644
 
 installed=()
 

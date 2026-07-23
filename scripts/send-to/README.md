@@ -13,8 +13,14 @@ new server code — just your existing `ocl_…` API token.
 
 1. Get an **unrestricted API token**: web app → *Account → API tokens* (folder-scoped tokens are
    refused by WebDAV).
-2. Double-click **`windows/install-windows.cmd`**. Paste your WebDAV URL
-   (e.g. `https://copper.forgenet.fr/api/dav`) and the token when asked. *No admin needed.*
+2. Install, either way (no admin needed):
+   - **One-liner** — in PowerShell:
+     ```powershell
+     irm https://raw.githubusercontent.com/softpython2884/OpenCoperLock/main/scripts/send-to/windows/install-windows.ps1 | iex
+     ```
+   - **Or** double-click **`windows/install-windows.cmd`** from a checkout.
+
+   Paste your WebDAV URL (e.g. `https://copper.forgenet.fr/api/dav`) and the token when asked.
 3. Done — right-click any file(s) → **Send to → OpenCoperLock**.
 
 The installer copies `send.ps1` + the icon into `%LOCALAPPDATA%\OpenCoperLock`, stores your token
@@ -28,7 +34,11 @@ Re-run the installer any time to change the URL/token. To uninstall, delete the 
 ## Linux
 
 1. Get an unrestricted API token (as above).
-2. Run **`linux/install-linux.sh`** and paste your WebDAV URL + token.
+2. Install with the one-liner:
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/softpython2884/OpenCoperLock/main/scripts/send-to/linux/install-linux.sh | bash
+   ```
+   (or run **`linux/install-linux.sh`** from a checkout), then paste your WebDAV URL + token.
 3. Right-click a file:
    - **GNOME Files / Cinnamon:** *Scripts → Send to OpenCoperLock*
    - **KDE Dolphin:** *Send to OpenCoperLock* (top of the menu)

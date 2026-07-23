@@ -23,6 +23,8 @@ import {
   UserCog,
   Smartphone,
   ArrowUpRight,
+  Download,
+  MousePointer2,
   type LucideIcon,
 } from 'lucide-react';
 import { API_URL } from '@/lib/api';
@@ -38,7 +40,8 @@ type Block =
   | { ol: string[] }
   | { code: string }
   | { note: string }
-  | { warn: string };
+  | { warn: string }
+  | { btns: { label: string; href: string }[] };
 
 interface Section {
   id: string;
@@ -379,6 +382,53 @@ curl -H "Authorization: Bearer ocl_…" -F "file=@backup.tgz" \\
       ],
     },
     {
+      id: 'desktop',
+      icon: MousePointer2,
+      title: L('Intégrations bureau (clic droit, disque réseau)', 'Desktop integrations (right-click, network drive)'),
+      blocks: [
+        { h: L('Envoyer vers OpenCoperLock (clic droit)', 'Send to OpenCoperLock (right-click)') },
+        {
+          p: L(
+            'Ajoute une entrée « Envoyer vers → OpenCoperLock » au clic droit de votre explorateur de fichiers (Windows et Linux). Les fichiers sélectionnés sont envoyés en un clic dans un espace « ComputerShared » de votre Drive, via WebDAV. L’installeur mémorise votre serveur et votre jeton d’API.',
+            'Adds a “Send to → OpenCoperLock” entry to your file manager’s right-click menu (Windows and Linux). Selected files upload in one click to a “ComputerShared” space in your Drive, over WebDAV. The installer remembers your server and API token.',
+          ),
+        },
+        { note: L('Créez d’abord un jeton d’API non restreint : Compte → Jetons d’API.', 'First create an unrestricted API token: Account → API tokens.') },
+        { h: L('Windows', 'Windows') },
+        {
+          p: L(
+            'Ouvrez PowerShell et lancez (aucun droit administrateur requis) :',
+            'Open PowerShell and run (no administrator rights needed):',
+          ),
+        },
+        { code: 'irm https://raw.githubusercontent.com/softpython2884/OpenCoperLock/main/scripts/send-to/windows/install-windows.ps1 | iex' },
+        { h: L('Linux', 'Linux') },
+        { p: L('GNOME Files, Cinnamon (Nemo) et KDE Dolphin. Dans un terminal :', 'GNOME Files, Cinnamon (Nemo) and KDE Dolphin. In a terminal:') },
+        { code: 'curl -fsSL https://raw.githubusercontent.com/softpython2884/OpenCoperLock/main/scripts/send-to/linux/install-linux.sh | bash' },
+        {
+          btns: [
+            { label: L('Télécharger l’installeur Windows (.cmd)', 'Download Windows installer (.cmd)'), href: 'https://github.com/softpython2884/OpenCoperLock/raw/main/scripts/send-to/windows/install-windows.cmd' },
+            { label: L('Voir les scripts sur GitHub', 'View the scripts on GitHub'), href: 'https://github.com/softpython2884/OpenCoperLock/tree/main/scripts/send-to' },
+          ],
+        },
+        { h: L('Monter le Drive en disque réseau (Windows)', 'Mount the Drive as a network drive (Windows)') },
+        {
+          p: L(
+            'Le client WebDAV de Windows est capricieux (voir la section WebDAV). Ce script configure le service WebClient, corrige les réglages qui bloquent, puis monte votre Drive sur une lettre (X: par défaut). Lancez dans PowerShell :',
+            'Windows’ WebDAV client is finicky (see the WebDAV section). This script configures the WebClient service, fixes the settings that block it, then maps your Drive to a letter (X: by default). Run in PowerShell:',
+          ),
+        },
+        { code: '$f="$env:TEMP\\ocl-mount.ps1"; irm https://raw.githubusercontent.com/softpython2884/OpenCoperLock/main/scripts/mount-opencoperlock-windows.ps1 -OutFile $f; powershell -ExecutionPolicy Bypass -File $f' },
+        {
+          btns: [
+            { label: L('Télécharger le script (.cmd)', 'Download the script (.cmd)'), href: 'https://github.com/softpython2884/OpenCoperLock/raw/main/scripts/mount-opencoperlock-windows.cmd' },
+            { label: L('Télécharger le script (.ps1)', 'Download the script (.ps1)'), href: 'https://github.com/softpython2884/OpenCoperLock/raw/main/scripts/mount-opencoperlock-windows.ps1' },
+          ],
+        },
+        { note: L('Un prompt UAC apparaît uniquement pour la partie qui règle le service WebClient. Le mappage du lecteur reste en session utilisateur.', 'A UAC prompt appears only for the part that configures the WebClient service. The drive mapping stays in your user session.') },
+      ],
+    },
+    {
       id: 'security',
       icon: ShieldCheck,
       title: L('Sécurité & confidentialité', 'Security & privacy'),
@@ -533,6 +583,20 @@ curl -H "Authorization: Bearer ocl_…" -F "file=@backup.tgz" \\
                     <p key={i} className="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-sm text-amber-100/90">
                       ⚠️ {b.warn}
                     </p>
+                  ) : 'btns' in b ? (
+                    <div key={i} className="flex flex-wrap gap-2 pt-1">
+                      {b.btns.map((btn) => (
+                        <a
+                          key={btn.href}
+                          href={btn.href}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm text-zinc-200 transition hover:border-violet-400/40 hover:bg-violet-500/10 hover:text-white"
+                        >
+                          <Download size={15} /> {btn.label}
+                        </a>
+                      ))}
+                    </div>
                   ) : 'ol' in b ? (
                     <ol key={i} className="list-decimal space-y-1 pl-5 text-sm leading-relaxed text-zinc-400">
                       {b.ol.map((li) => (

@@ -83,6 +83,10 @@ Mount your normal spaces as a network drive (Finder, Windows Explorer, `rsync`/d
 - **Username:** anything (your email) — it is ignored.
 - **Password:** an API token (`read` + `write`).
 
+> **"Send to OpenCoperLock" (right-click upload).** For a one-click *right-click → Send to →
+> OpenCoperLock* that drops files into a `ComputerShared` space, see
+> [`scripts/send-to/`](../scripts/send-to/) (Windows + Linux installers, uses your WebDAV token).
+
 ```bash
 # Example with rclone
 rclone config create ocl webdav url "$HOST/dav/" vendor other user me pass "$TOKEN"

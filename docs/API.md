@@ -167,6 +167,36 @@ curl -u "me:ocl_YOUR_TOKEN" -X PROPFIND -H "Depth: 1" https://<host>/api/dav/
 
 ### Windows Explorer
 
+#### One-click setup script (recommended)
+
+Rather than clicking through all of the below by hand, use the ready-made script in
+[`scripts/`](../scripts/):
+
+- **`mount-opencoperlock-windows.cmd`** — double-click it. Edit the `SERVER` / `DRIVE` / `LABEL`
+  values at the top first if you like (defaults: `copper.forgenet.fr`, drive `X:`, label
+  `OpenCoperLock`). It calls the PowerShell script, which:
+  1. configures the WebClient service (Basic-over-HTTPS, raises the 50 MB cap, longer timeout) —
+     a UAC prompt appears for this part,
+  2. restarts WebClient (clearing its "not a WebDAV server" cache),
+  3. maps your Drive to the chosen letter (reconnecting at logon),
+  4. gives the drive a proper label instead of Windows' default (`dav`).
+
+  You'll be asked to paste your **`ocl_…` API token** (Account → API tokens, unrestricted). Or run
+  the PowerShell script directly with your own options:
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File .\mount-opencoperlock-windows.ps1 `
+      -Server copper.forgenet.fr -Drive Z -Token ocl_XXXX -Label "My Drive"
+  ```
+
+> **Two cosmetic Windows quirks the script can't change** (they're client-side, not the server):
+> - **The mount is named after the last URL segment** (`…/api/dav/` → "dav"). The script sets a
+>   nicer label via the registry; you can also just rename it in *This PC*.
+> - **"Free space" often shows your local C: drive** (e.g. *33 GB free of 237 GB*), not your account
+>   quota. Windows ignores the server's RFC-4331 quota on many builds. Your real usage is in the web
+>   app — the server *does* report it correctly (a `PROPFIND` shows `quota-available-bytes`).
+
+#### Doing it by hand
+
 Windows' built-in WebDAV client (the *WebClient* / Mini-Redirector service) is strict and its
 errors are misleading — **`0x80070043` "The network name cannot be found"** almost always means
 Windows never completed the WebDAV handshake, **not** that the server is down. Work through these
@@ -200,4 +230,3 @@ in order:
    curl -u "me:ocl_YOUR_TOKEN" -X PROPFIND -H "Depth: 1" https://copper.forgenet.fr/api/dav/
    ```
    A `207 Multi-Status` with XML = the server and proxy are perfect; the ball is in Windows' court.
-</content>

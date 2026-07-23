@@ -20,6 +20,7 @@ import { storeUserFile, QuotaExhaustedError } from '../services/upload.js';
 import { FileTooLargeError, InfectedFileError } from '../services/ingest.js';
 import { trashFile, trashFolder } from '../services/trash.js';
 import { remainingAllowance } from '../services/quota.js';
+import { ensureRootReadme } from '../services/welcome.js';
 
 const PREFIX = '/dav';
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PROPFIND']);
@@ -186,6 +187,9 @@ export const webdavRoutes: FastifyPluginAsync = async (app) => {
 
     if (method === 'PROPFIND') {
       if (node.type === 'invalid' || node.type === 'missing') return reply.code(404).send();
+      // First time the root is browsed, drop a one-time OpenCoperLock.txt there (before we list, so
+      // it shows in this very response). Deleting it keeps it gone.
+      if (node.type === 'root') await ensureRootReadme(app.ctx, ownerId);
       const depth = String(req.headers.depth ?? '1');
       const parts: string[] = [];
       // Report the account quota on the queried collection so the mount shows the right size.

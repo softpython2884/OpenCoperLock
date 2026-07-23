@@ -75,6 +75,10 @@ model User {
   // The build (git SHA) for which this user last dismissed the "What's new" dialog. null until
   // they first load the app; lets us show release notes exactly once per update, per user.
   lastSeenVersion String?
+  // Whether the one-time OpenCoperLock.txt readme has been placed at the Drive root. Seeded once
+  // (on first WebDAV root listing or registration); a flag, not an existence check, so deleting the
+  // file makes it stay gone.
+  rootReadmeSeeded Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

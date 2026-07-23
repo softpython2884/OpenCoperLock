@@ -1,10 +1,52 @@
 import type { FastifyPluginAsync } from 'fastify';
+import { Readable } from 'node:stream';
+import type { Folder } from '@prisma/client';
 import { createFolderSchema, randomToken, updateFolderSchema } from '@opencoperlock/shared';
 import { prisma } from '../db.js';
 import { parseOr400 } from '../lib/validate.js';
 import { toPublicFolder } from '../lib/serialize.js';
 import { hardDeleteFolder, trashFolder } from '../services/trash.js';
+import { storeUserFile } from '../services/upload.js';
 import { audit } from '../services/audit.js';
+import type { AppContext } from '../context.js';
+
+/** Bilingual welcome note dropped into the root of each new space. Users may delete it freely. */
+function welcomeText(space: Folder): string {
+  const mode = space.isPublic
+    ? 'Public / Open (plaintext, direct URLs)'
+    : 'Server-encrypted (AES-256-GCM at rest)';
+  return [
+    `OpenCoperLock - "${space.name}"`,
+    '='.repeat(40),
+    '',
+    `[FR] Ceci est un espace (${mode}). Les fichiers que vous deposez ICI apparaissent`,
+    'dans l\'application web OpenCoperLock. Bon a savoir : un fichier place a la RACINE du',
+    'Drive via WebDAV ou l\'API ne s\'affiche PAS dans l\'app web - rangez toujours vos',
+    'fichiers dans un espace comme celui-ci. Vous pouvez supprimer ce fichier sans risque.',
+    '',
+    `[EN] This is a space (${mode}). Files you drop HERE show up in the OpenCoperLock web`,
+    'app. Heads up: a file placed at the Drive ROOT over WebDAV or the API does NOT appear',
+    'in the web app - always keep your files inside a space like this one. You can delete',
+    'this file safely.',
+    '',
+  ].join('\n');
+}
+
+/** Best-effort: put an OpenCoperLock.txt in a brand-new space's root. Never fails folder creation. */
+async function seedWelcomeFile(ctx: AppContext, ownerId: string, space: Folder): Promise<void> {
+  try {
+    await storeUserFile(ctx, {
+      ownerId,
+      folderId: space.id,
+      stream: Readable.from([Buffer.from(welcomeText(space), 'utf8')]),
+      filename: 'OpenCoperLock.txt',
+      mimetype: 'text/plain',
+      public: space.isPublic,
+    });
+  } catch {
+    /* quota exhausted, storage hiccup, etc. - the space is still created. */
+  }
+}
 
 /** Collect a folder's id plus all descendant ids (breadth-first), scoped to one owner's personal
  *  Drive (Shared-Space folders carry a spaceId and are handled by the /spaces routes). */
@@ -70,6 +112,9 @@ export const folderRoutes: FastifyPluginAsync = async (app) => {
         },
       });
       await audit(req, 'folder.create', { target: folder.id });
+      // A brand-new top-level space (not a subfolder, not a blind ZK vault) gets a short readme in
+      // its root explaining how spaces work. Best-effort and deletable.
+      if (!body.parentId && !isZk) await seedWelcomeFile(app.ctx, req.user!.id, folder);
       return reply.code(201).send({ folder: toPublicFolder(folder) });
     } catch {
       return reply.code(409).send({ error: 'A folder with that name already exists here' });

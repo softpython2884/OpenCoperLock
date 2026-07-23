@@ -20,6 +20,34 @@ the source.
 - **[Deployment](docs/DEPLOYMENT.md)** — bare-metal (PM2) and Docker, behind nginx.
 - **[Contributing](CONTRIBUTING.md)** · **[Security policy](SECURITY.md)**
 
+## 🚀 Client quick-setup (right-click upload & network drive)
+
+Turn any machine into a one-click uploader — right-click a file → send it straight to a
+**`ComputerShared`** space in your Drive. All of it lives in [`scripts/`](scripts/) and uses your
+personal API token over WebDAV (no new server code).
+
+**Linux — one command (interactive wizard):** installs the right-click integration and/or mounts
+your Drive as a folder (rclone). It asks for your instance URL + token once, checks the connection,
+and configures everything (it honours `HTTP(S)_PROXY` too):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/softpython2884/OpenCoperLock/main/scripts/opencoperlock-linux-wizard.sh | bash
+```
+
+**Windows — one line in PowerShell** (no admin) for the *Send to → OpenCoperLock* + *Drop on
+OpenCoperLock* right-click entries:
+
+```powershell
+irm https://raw.githubusercontent.com/softpython2884/OpenCoperLock/main/scripts/send-to/windows/install-windows.ps1 | iex
+```
+
+Also in `scripts/`: a **WebDAV network-drive** mounter for Windows, and small **right-click-menu
+tidy tools** (a GUI manager + a quick declutter for the noisy Windows 11 entries). See
+[`scripts/send-to/`](scripts/send-to/) and the **Desktop integrations** section of `/docs`.
+
+> Replace the URL host with your own instance. On the maintainer's instance it's
+> `https://copper.forgenet.fr`; the scripts default to that but prompt for yours.
+
 ## What it does
 
 - **Drive** — browse, upload (streaming), download and delete files and folders, with a

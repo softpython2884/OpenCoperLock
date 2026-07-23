@@ -25,12 +25,29 @@ asks() { local p="$1" a; printf '%s' "$p" >&2; IFS= read -rs a <&3 || true; prin
 
 say "=== OpenCoperLock - Linux setup wizard ==="
 echo
+if [ -n "${HTTPS_PROXY:-${https_proxy:-}}" ]; then say "(using proxy ${HTTPS_PROXY:-$https_proxy})"; fi
 
 default_base="https://copper.forgenet.fr/api/dav"
-BASE="$(ask "WebDAV base URL [$default_base]: " "$default_base")"
-BASE="${BASE%/}"
-TOKEN="$(asks "Paste your OpenCoperLock API token (ocl_...): ")"
-[ -n "$TOKEN" ] || { warn "No token provided - aborting."; exit 1; }
+
+# Collect + verify the URL and token. curl goes through HTTP(S)_PROXY automatically if set.
+while true; do
+  BASE="$(ask "WebDAV base URL [$default_base]: " "$default_base")"
+  BASE="${BASE%/}"
+  TOKEN="$(asks "Paste your OpenCoperLock API token (ocl_...): ")"
+  [ -n "$TOKEN" ] || { warn "No token provided."; continue; }
+
+  printf 'Checking the connection... ' >&2
+  code="$(curl -fsS -o /dev/null -w '%{http_code}' -u "me:$TOKEN" -X PROPFIND -H 'Depth: 0' "$BASE/" 2>/dev/null || true)"
+  if [ "$code" = "207" ]; then ok "OK (server reachable, token valid)."; break; fi
+  warn "Failed (HTTP ${code:-no response})."
+  case "$code" in
+    401) warn "  -> the token is wrong or lacks read/write scope." ;;
+    404|405) warn "  -> the URL looks off. It usually ends in /dav or /api/dav." ;;
+    000|"") warn "  -> could not reach the host (DNS/TLS/proxy/offline?)." ;;
+  esac
+  retry="$(ask "Try again? [Y/n]: " "Y")"
+  case "${retry,,}" in n|no|non) warn "Aborting."; exit 1 ;; esac
+done
 
 # Save config (readable only by you).
 umask 077

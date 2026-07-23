@@ -1,14 +1,14 @@
 <#
-  OpenCoperLock — Windows right-click menu manager.
+  OpenCoperLock - Windows right-click menu manager.
 
   A simple, SAFE, reversible tool to tidy the Explorer right-click menu that apps keep cluttering.
   It lists two kinds of entries and lets you turn any of them on/off:
 
-    • Classic verbs        (…\shell\<verb>)              — disabled with a `LegacyDisable` flag.
-    • Shell-extension items (…\shellex\ContextMenuHandlers) — disabled via Windows' official
+    - Classic verbs        (...\shell\<verb>)              - disabled with a `LegacyDisable` flag.
+    - Shell-extension items (...\shellex\ContextMenuHandlers) - disabled via Windows' official
                                                              "Shell Extensions\Blocked" list.
 
-  NOTHING is deleted — disabling just sets a flag, so you can re-enable anything later. Writing to
+  NOTHING is deleted - disabling just sets a flag, so you can re-enable anything later. Writing to
   the system-wide (HKLM) entries needs Administrator; run the .cmd wrapper (it elevates) to manage
   everything. Per-user (HKCU) entries work without elevation.
 
@@ -76,25 +76,26 @@ function Get-Entries {
 
 function Toggle-Entry($e) {
   if ($e.Scope -eq 'HKLM' -and -not $IsAdmin) {
-    Write-Host "  ! '$($e.Name)' is system-wide (HKLM) — re-run the .cmd as Administrator to change it." -ForegroundColor Yellow
+    Write-Host "  ! '$($e.Name)' is system-wide (HKLM) - re-run the .cmd as Administrator to change it." -ForegroundColor Yellow
     return
   }
   if ($e.Type -eq 'verb') {
     if ($e.Enabled) { New-ItemProperty -LiteralPath $e.Path -Name 'LegacyDisable' -Value '' -PropertyType String -Force | Out-Null }
     else { Remove-ItemProperty -LiteralPath $e.Path -Name 'LegacyDisable' -ErrorAction SilentlyContinue }
   } else {
-    if ($e.Clsid -notmatch '^{.+}$') { Write-Host "  ! '$($e.Name)' has no CLSID — cannot toggle." -ForegroundColor Yellow; return }
+    if ($e.Clsid -notmatch '^{.+}$') { Write-Host "  ! '$($e.Name)' has no CLSID - cannot toggle." -ForegroundColor Yellow; return }
     if (-not $IsAdmin) { Write-Host "  ! Shell-extension toggles need Administrator." -ForegroundColor Yellow; return }
     if (-not (Test-Path $BlockedKey)) { New-Item $BlockedKey -Force | Out-Null }
     if ($e.Enabled) { New-ItemProperty $BlockedKey -Name $e.Clsid -Value $e.Name -PropertyType String -Force | Out-Null }
     else { Remove-ItemProperty $BlockedKey -Name $e.Clsid -ErrorAction SilentlyContinue }
   }
-  Write-Host ("  {0} '{1}'" -f ($(if ($e.Enabled) { 'Disabled' } else { 'Enabled' }), $e.Name)) -ForegroundColor Green
+  $action = if ($e.Enabled) { 'Disabled' } else { 'Enabled' }
+  Write-Host ("  {0} '{1}'" -f $action, $e.Name) -ForegroundColor Green
 }
 
 # --- interactive loop ----------------------------------------------------------------------------
-Write-Host "OpenCoperLock — right-click menu manager" -ForegroundColor Cyan
-if (-not $IsAdmin) { Write-Host "(not elevated — system-wide entries are read-only; run the .cmd to elevate)" -ForegroundColor DarkGray }
+Write-Host "OpenCoperLock - right-click menu manager" -ForegroundColor Cyan
+if (-not $IsAdmin) { Write-Host "(not elevated - system-wide entries are read-only; run the .cmd to elevate)" -ForegroundColor DarkGray }
 
 while ($true) {
   $entries = @(Get-Entries)

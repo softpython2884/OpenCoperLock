@@ -1,25 +1,25 @@
 <#
-  OpenCoperLock — mount your Drive as a Windows network drive over WebDAV.
+  OpenCoperLock - mount your Drive as a Windows network drive over WebDAV.
 
   Windows' built-in WebDAV client (the "WebClient" service) needs a few registry tweaks before it
   behaves, and it mislabels the mount. This script does the whole thing in one shot:
 
     1. Configures the WebClient service (Basic-over-HTTPS, raises the 50 MB download cap, longer
-       timeout) — this part self-elevates to Administrator.
+       timeout) - this part self-elevates to Administrator.
     2. Restarts WebClient so the settings take effect and its "not a WebDAV server" cache is cleared.
     3. Maps your Drive to a drive letter (default X:) that reconnects at logon.
     4. Gives the drive a proper label instead of Windows' ugly default ("dav").
 
-  USAGE (right-click the .cmd wrapper → it calls this, or run directly):
+  USAGE (right-click the .cmd wrapper -> it calls this, or run directly):
 
     powershell -ExecutionPolicy Bypass -File .\mount-opencoperlock-windows.ps1 `
         -Server copper.forgenet.fr -Drive X -Token ocl_XXXXXXXX -Label "OpenCoperLock"
 
-  The token is your PERSONAL API token (Account → API tokens) — an unrestricted one; folder-scoped
+  The token is your PERSONAL API token (Account -> API tokens) - an unrestricted one; folder-scoped
   tokens are refused by WebDAV. If you omit -Token the script prompts for it.
 
   NOTE ON "free space": Windows often shows your LOCAL C: drive's size on a WebDAV mount instead of
-  your account quota. That's a Windows limitation — the server does report the correct quota. Your
+  your account quota. That's a Windows limitation - the server does report the correct quota. Your
   real usage is always shown in the web app.
 #>
 [CmdletBinding()]
@@ -43,7 +43,7 @@ function Test-Admin {
     [Security.Principal.WindowsBuiltinRole]::Administrator)
 }
 
-# ── Phase A: the Administrator-only part (registry + service) ─────────────────────────────────
+# -- Phase A: the Administrator-only part (registry + service) ---------------------------------
 function Set-WebClientConfig {
   $p = "HKLM:\SYSTEM\CurrentControlSet\Services\WebClient\Parameters"
   Set-ItemProperty $p -Name BasicAuthLevel           -Value 2          -Type DWord
@@ -60,7 +60,7 @@ if ($ConfigureOnly) {
   return
 }
 
-# ── Phase B: the normal-user part (mapping must NOT run elevated, or Explorer won't see it) ─────
+# -- Phase B: the normal-user part (mapping must NOT run elevated, or Explorer won't see it) -----
 if (-not $Token) { $Token = Read-Host "Paste your OpenCoperLock API token (ocl_...)" }
 if (-not $Token) { throw "No token provided." }
 
@@ -96,5 +96,5 @@ try {
 }
 
 Write-Host ""
-Write-Host "Done. Your Drive is mounted at $($Drive): — open 'This PC'." -ForegroundColor Green
+Write-Host "Done. Your Drive is mounted at $($Drive): - open 'This PC'." -ForegroundColor Green
 Write-Host "(Windows may show your local disk size for 'free space'; that's a Windows quirk, not your real quota.)" -ForegroundColor DarkGray

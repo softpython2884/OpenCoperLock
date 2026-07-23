@@ -1,5 +1,5 @@
 <#
-  OpenCoperLock — "Send to" uploader (Windows).
+  OpenCoperLock - "Send to" uploader (Windows).
 
   Invoked (via launch.vbs, hidden) with one or more file paths as arguments. Uploads each selected
   file to the "ComputerShared" space (a top-level folder in your Drive) over WebDAV, shows a small
@@ -32,7 +32,7 @@ function Show-Toast($title, $text) {
 
 Log "invoked with $($args.Count) arg(s): $($args -join ' | ')"
 
-if (-not (Test-Path $cfgPath)) { Log 'no config'; Show-Toast 'OpenCoperLock' 'Not configured yet — run the installer.'; exit 1 }
+if (-not (Test-Path $cfgPath)) { Log 'no config'; Show-Toast 'OpenCoperLock' 'Not configured yet - run the installer.'; exit 1 }
 
 $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
 $base = ($cfg.base).TrimEnd('/')
@@ -62,4 +62,4 @@ $tok = $null; $cred = $null
 
 Log "done: ok=$ok fail=$fail"
 if ($fail -eq 0) { Show-Toast 'OpenCoperLock' "Sent $ok file(s) to ComputerShared." }
-else { Show-Toast 'OpenCoperLock' "Sent $ok, $fail failed — see send.log." }
+else { Show-Toast 'OpenCoperLock' "Sent $ok, $fail failed - see send.log." }

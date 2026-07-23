@@ -1,15 +1,15 @@
 <#
-  OpenCoperLock — install the right-click "send to OpenCoperLock" integration (Windows).
+  OpenCoperLock - install the right-click "send to OpenCoperLock" integration (Windows).
 
   Per-user, NO administrator rights needed. It:
     1. installs the uploader (send.ps1), a windowless launcher (launch.vbs) and the brand icon into
        %LOCALAPPDATA%\OpenCoperLock,
-    2. asks for your WebDAV URL + API token (the token is DPAPI-encrypted for your Windows user —
+    2. asks for your WebDAV URL + API token (the token is DPAPI-encrypted for your Windows user -
        unreadable by others, never leaves your machine) and your preferences,
     3. pre-creates the "ComputerShared" space in your Drive,
     4. adds the integration points you chose:
-         • Explorer's "Send to > OpenCoperLock" (uploads ALL selected files in one go), and/or
-         • right-click "Drop on OpenCoperLock" / "Multi-Drop on OpenCoperLock" entries.
+         - Explorer's "Send to > OpenCoperLock" (uploads ALL selected files in one go), and/or
+         - right-click "Drop on OpenCoperLock" / "Multi-Drop on OpenCoperLock" entries.
 
   Uploads land in the "ComputerShared" space. Everything runs hidden (no PowerShell window flash)
   and shows a small tray notification when done (can be turned off).

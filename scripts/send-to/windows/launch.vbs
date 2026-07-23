@@ -1,4 +1,4 @@
-' OpenCoperLock — windowless launcher.
+' OpenCoperLock - windowless launcher.
 '
 ' Invoked by the "Send to", "Drop on OpenCoperLock" and "Multi-Drop on OpenCoperLock" entries with
 ' the selected file path(s) as arguments. It forwards them to send.ps1 and runs PowerShell HIDDEN

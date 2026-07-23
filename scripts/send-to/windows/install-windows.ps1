@@ -65,7 +65,7 @@ if ([string]::IsNullOrWhiteSpace($Token)) { throw "No token provided." }
 
 $wantNotify  = if ($Notify)      { $Notify -eq 'yes' }      else { Ask-YesNo "Show a small notification after each send?" $true }
 $wantSendTo  = if ($SendTo)      { $SendTo -eq 'yes' }      else { Ask-YesNo "Add 'OpenCoperLock' to the 'Send to' menu (best for many files at once)?" $true }
-$wantContext = if ($ContextMenu) { $ContextMenu -eq 'yes' } else { Ask-YesNo "Add 'Drop / Multi-Drop on OpenCoperLock' to the right-click menu?" $true }
+$wantContext = if ($ContextMenu) { $ContextMenu -eq 'yes' } else { Ask-YesNo "Add 'Drop on OpenCoperLock' to the right-click menu?" $true }
 
 # --- install files -------------------------------------------------------------------------------
 Get-Component 'windows/send.ps1'            (Join-Path $dstDir 'send.ps1')
@@ -84,22 +84,23 @@ $vbs = Join-Path $dstDir 'launch.vbs'
 $ico = Join-Path $dstDir 'opencoperlock.ico'
 $wscript = Join-Path $env:SystemRoot 'System32\wscript.exe'
 
-# --- "Send to" shortcut (targets wscript+launch.vbs so files pass reliably and no window shows) ---
+# --- "Send to" shortcut (targets launch.vbs directly so Explorer appends the files and no window
+#     shows; this is the most reliable SendTo form) --------------------------------------------------
 $sendToLnk = Join-Path ([Environment]::GetFolderPath('SendTo')) 'OpenCoperLock.lnk'
 if ($wantSendTo) {
   $ws = New-Object -ComObject WScript.Shell
   $sc = $ws.CreateShortcut($sendToLnk)
-  $sc.TargetPath       = $wscript
-  $sc.Arguments        = '"' + $vbs + '"'
+  $sc.TargetPath       = $vbs
   $sc.IconLocation     = "$ico,0"
   $sc.Description       = 'Send to OpenCoperLock (ComputerShared)'
   $sc.WorkingDirectory = $dstDir
   $sc.Save()
 } elseif (Test-Path $sendToLnk) { Remove-Item $sendToLnk -Force }
 
-# --- right-click context-menu verbs (per-user HKCU, applies to all files) -------------------------
-# Use the .NET registry API: the all-files key is literally named "*", which the PowerShell registry
-# provider would treat as a wildcard.
+# --- right-click context-menu verb (per-user HKCU, applies to all files) --------------------------
+# One "Drop on OpenCoperLock" verb: on a multi-selection Windows fires it once per file, so a single
+# verb handles both one file and several. Uses the .NET registry API because the all-files key is
+# literally named "*", which the PowerShell registry provider would treat as a wildcard.
 function Set-Verb($keyName, $label) {
   $k = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Software\Classes\*\shell\$keyName")
   $k.SetValue('MUIVerb', $label)
@@ -108,18 +109,17 @@ function Set-Verb($keyName, $label) {
   $c.SetValue('', '"' + $wscript + '" "' + $vbs + '" "%1"')   # '' = the key's (default) value
   $c.Close(); $k.Close()
 }
+# Always drop the old "Multi-Drop" verb (merged into "Drop").
+try { [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree('Software\Classes\*\shell\OpenCoperLock.MultiDrop', $false) } catch { }
 if ($wantContext) {
-  Set-Verb 'OpenCoperLock.Drop'      'Drop on OpenCoperLock'
-  Set-Verb 'OpenCoperLock.MultiDrop' 'Multi-Drop on OpenCoperLock'
+  Set-Verb 'OpenCoperLock.Drop' 'Drop on OpenCoperLock'
 } else {
-  foreach ($k in 'OpenCoperLock.Drop', 'OpenCoperLock.MultiDrop') {
-    try { [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree("Software\Classes\*\shell\$k", $false) } catch { }
-  }
+  try { [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree('Software\Classes\*\shell\OpenCoperLock.Drop', $false) } catch { }
 }
 
 Write-Host ""
 Write-Host "Installed." -ForegroundColor Green
 if ($wantSendTo)  { Write-Host "  - Right-click file(s) -> Send to -> OpenCoperLock (uploads all selected at once)." -ForegroundColor DarkGray }
-if ($wantContext) { Write-Host "  - Right-click file(s) -> Drop / Multi-Drop on OpenCoperLock." -ForegroundColor DarkGray }
+if ($wantContext) { Write-Host "  - Right-click file(s) -> Drop on OpenCoperLock." -ForegroundColor DarkGray }
 Write-Host "  Uploads land in the 'ComputerShared' space. Log: $dstDir\send.log" -ForegroundColor DarkGray
 Write-Host "  Re-run this installer any time to change settings." -ForegroundColor DarkGray

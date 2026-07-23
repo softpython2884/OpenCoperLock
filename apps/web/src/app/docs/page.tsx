@@ -403,7 +403,9 @@ curl -H "Authorization: Bearer ocl_…" -F "file=@backup.tgz" \\
         },
         { code: 'irm https://raw.githubusercontent.com/softpython2884/OpenCoperLock/main/scripts/send-to/windows/install-windows.ps1 | iex' },
         { h: L('Linux', 'Linux') },
-        { p: L('GNOME Files, Cinnamon (Nemo) et KDE Dolphin. Dans un terminal :', 'GNOME Files, Cinnamon (Nemo) and KDE Dolphin. In a terminal:') },
+        { p: L('Le plus simple : l’assistant tout-en-un. Il demande votre URL + jeton une fois, puis propose le menu clic droit (GNOME Files, Nemo, Dolphin) et/ou le montage du Drive en dossier via rclone :', 'Easiest: the all-in-one wizard. It asks your URL + token once, then offers the right-click menu (GNOME Files, Nemo, Dolphin) and/or mounting the Drive as a folder via rclone:') },
+        { code: 'curl -fsSL https://raw.githubusercontent.com/softpython2884/OpenCoperLock/main/scripts/opencoperlock-linux-wizard.sh | bash' },
+        { p: L('Ou juste l’intégration clic droit :', 'Or just the right-click integration:') },
         { code: 'curl -fsSL https://raw.githubusercontent.com/softpython2884/OpenCoperLock/main/scripts/send-to/linux/install-linux.sh | bash' },
         {
           btns: [
@@ -435,8 +437,20 @@ curl -H "Authorization: Bearer ocl_…" -F "file=@backup.tgz" \\
         },
         {
           btns: [
-            { label: L('Télécharger l’outil (.cmd)', 'Download the tool (.cmd)'), href: 'https://github.com/softpython2884/OpenCoperLock/raw/main/scripts/windows-context-menu-manager.cmd' },
+            { label: L('Interface graphique (.cmd)', 'Graphical tool (.cmd)'), href: 'https://github.com/softpython2884/OpenCoperLock/raw/main/scripts/windows-context-menu-manager.cmd' },
             { label: L('Voir le script (.ps1)', 'View the script (.ps1)'), href: 'https://github.com/softpython2884/OpenCoperLock/blob/main/scripts/windows-context-menu-manager.ps1' },
+          ],
+        },
+        {
+          p: L(
+            'Raccourci : pour dégager directement les entrées Windows 11 les plus envahissantes (Modifier avec Photos / Paint, Créer avec Designer, Demander à Copilot), cet outil dédié les désactive d’un coup (réversible) :',
+            'Shortcut: to clear the most intrusive Windows 11 entries at once (Edit with Photos / Paint, Create with Designer, Ask Copilot), this dedicated tool disables them in one go (reversible):',
+          ),
+        },
+        {
+          btns: [
+            { label: L('Nettoyage rapide (.cmd)', 'Quick declutter (.cmd)'), href: 'https://github.com/softpython2884/OpenCoperLock/raw/main/scripts/windows-declutter.cmd' },
+            { label: L('Voir le script (.ps1)', 'View the script (.ps1)'), href: 'https://github.com/softpython2884/OpenCoperLock/blob/main/scripts/windows-declutter.ps1' },
           ],
         },
       ],

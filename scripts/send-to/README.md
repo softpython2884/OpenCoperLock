@@ -21,10 +21,10 @@ new server code — just your existing `ocl_…` API token.
    - **Or** double-click **`windows/install-windows.cmd`** from a checkout.
 
    Paste your WebDAV URL (e.g. `https://copper.forgenet.fr/api/dav`) and the token when asked, then
-   pick your options (notification on/off; *Send to* menu; *Drop / Multi-Drop* right-click entries).
+   pick your options (notification on/off; *Send to* menu; *Drop on OpenCoperLock* right-click entry).
 3. Done. Depending on your choices, right-click any file(s) →
    - **Send to → OpenCoperLock** — uploads **all** selected files in one go, or
-   - **Drop on OpenCoperLock** / **Multi-Drop on OpenCoperLock** — top-level right-click entries.
+   - **Drop on OpenCoperLock** — a top-level right-click entry (handles one file or several).
 
 Everything runs **hidden** (a tiny `launch.vbs` starts the uploader with no PowerShell window) and
 shows a small tray notification when done. The installer stores your token **DPAPI-encrypted**
